@@ -1,0 +1,159 @@
+//
+//  SettingsView.swift
+//  BrewDesk
+//
+
+import AppKit
+import SwiftUI
+
+struct SettingsView: View {
+    @ObservedObject var state: AppState
+    @State private var showAbout = false
+    /// 异步绑定工具：避免在视图更新周期内直接修改 @Published 属性
+    private func asyncBinding<T>(_ keyPath: ReferenceWritableKeyPath<AppState, T>) -> Binding<T> {
+        Binding(
+            get: { state[keyPath: keyPath] },
+            set: { newValue in
+                DispatchQueue.main.async {
+                    state[keyPath: keyPath] = newValue
+                }
+            }
+        )
+    }
+
+    private var appVersion: String {
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        return "\(short) (\(build))"
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                if let installation = state.installation {
+                    LabeledContent("版本", value: installation.version)
+                    LabeledContent("路径") {
+                        Text(installation.executableURL.path)
+                            .textSelection(.enabled)
+                            .foregroundStyle(.secondary)
+                    }
+                    LabeledContent("Prefix", value: installation.prefix)
+                    HStack(spacing: 20) {
+                        statBadge(icon: "tray.full", label: "已安装", value: state.installed.count)
+                        statBadge(icon: "arrow.triangle.2.circlepath", label: "可更新", value: state.outdated.count)
+                        statBadge(icon: "gearshape.2", label: "服务", value: state.services.count)
+                    }
+                    .padding(.vertical, 4)
+                } else {
+                    Label("未检测到 Homebrew", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Label("Homebrew", systemImage: "mug")
+            } footer: {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("自定义 brew 路径（可选）", text: $state.customBrewPath)
+                        .textFieldStyle(.roundedBorder)
+                        .help("例如 /opt/homebrew/bin/brew")
+                    HStack {
+                        Button("重新检测") { Task { await state.redetectBrew() } }
+                            .buttonStyle(.glassCapsule)
+                        Button("打开 Homebrew 网站") {
+                            if let url = URL(string: "https://brew.sh") { NSWorkspace.shared.open(url) }
+                        }
+                        .buttonStyle(.glassCapsule)
+                        Spacer()
+                    }
+                }
+            }
+
+            Section {
+                Toggle("默认仅显示手动安装的 formula", isOn: asyncBinding(\.showOnlyRequested))
+                    .help("作为依赖安装的 formula 默认隐藏，可在已安装页随时切换")
+            } header: {
+                Label("列表", systemImage: "list.bullet")
+            } footer: {
+                Text("作为依赖安装的 formula 默认隐藏，可在已安装页随时切换。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("任务完成时发送系统通知", isOn: asyncBinding(\.notificationsEnabled))
+                    .onChange(of: state.notificationsEnabled) { _, enabled in
+                        guard enabled else { return }
+                        NotificationService.requestAuthorizationIfNeeded()
+                    }
+            } header: {
+                Label("通知", systemImage: "bell")
+            } footer: {
+                Text("安装、升级、卸载、清理、Brewfile 等任务结束时通知。首次开启会请求系统权限。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
+                Picker("主题", selection: asyncBinding(\.appearanceMode)) {
+                    ForEach(AppState.AppearanceMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+            } header: {
+                Label("外观", systemImage: "paintbrush")
+            } footer: {
+                Text("更改后立即生效，无需重启应用。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
+                LabeledContent("刷新全部", value: "⇧⌘R")
+                LabeledContent("全部升级", value: "⇧⌘U")
+                LabeledContent("展开/收起日志", value: "⇧⌘L")
+            } header: {
+                Label("快捷键", systemImage: "command")
+            }
+
+            Section {
+                LabeledContent("应用", value: "BrewDesk")
+                LabeledContent("版本", value: appVersion)
+                LabeledContent("用途", value: "Homebrew 图形界面")
+                Button { showAbout = true } label: {
+                    Label("打开关于页…", systemImage: "info.circle")
+                }
+                .buttonStyle(.glassCapsule)
+            } header: {
+                Label("关于", systemImage: "info.circle")
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background {
+            Rectangle()
+                .fill(.regularMaterial)
+                .ignoresSafeArea()
+        }
+        .navigationTitle("设置")
+        .sheet(isPresented: $showAbout) { AboutView() }
+    }
+
+    @ViewBuilder
+    private func statBadge(icon: String, label: String, value: Int) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(value > 0 ? Color.accentColor : .secondary)
+            Text("\(value)")
+                .font(.title3.weight(.semibold).monospacedDigit())
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(.quaternary)
+        }
+    }
+}

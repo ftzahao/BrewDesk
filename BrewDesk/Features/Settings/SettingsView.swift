@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import Sparkle
 import SwiftUI
 
 struct SettingsView: View {
@@ -87,6 +88,29 @@ struct SettingsView: View {
                 Label("通知", systemImage: "bell")
             } footer: {
                 Text("安装、升级、卸载、清理、Brewfile 等任务结束时通知。首次开启会请求系统权限。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("自动检查更新", isOn: asyncBinding(\.autoCheckForUpdates))
+                    .onChange(of: state.autoCheckForUpdates) { _, enabled in
+                        state.updater?.updater.automaticallyChecksForUpdates = enabled
+                    }
+                Toggle("自动下载更新", isOn: asyncBinding(\.autoDownloadUpdates))
+                    .onChange(of: state.autoDownloadUpdates) { _, enabled in
+                        state.updater?.updater.automaticallyDownloadsUpdates = enabled
+                    }
+                Button {
+                    state.updater?.checkForUpdates()
+                } label: {
+                    Label("立即检查更新…", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.glassCapsule)
+                .disabled(state.updater?.canCheckForUpdates != true)
+            } header: {
+                Label("更新", systemImage: "arrow.down.circle")
+            } footer: {
+                Text("BrewDesk 使用 Sparkle 框架自动更新应用本身。设置应用更新前会通知你。")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

@@ -4,10 +4,12 @@
 //
 
 import AppKit
+import Sparkle
 import SwiftUI
 
 struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var updater: UpdaterController
 
     private var appVersion: String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -42,6 +44,14 @@ struct AboutView: View {
             Text("版本 \(appVersion)")
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
+
+            Button {
+                updater.checkForUpdates()
+            } label: {
+                Label("检查更新…", systemImage: "arrow.down.circle")
+            }
+            .buttonStyle(.glassCapsule)
+            .disabled(!updater.canCheckForUpdates)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
@@ -88,6 +98,7 @@ struct AboutView: View {
             Section("技术") {
                 LabeledContent("界面", value: "SwiftUI")
                 LabeledContent("后端", value: "Homebrew CLI")
+                LabeledContent("更新框架", value: "Sparkle")
                 LabeledContent("Bundle ID", value: Bundle.main.bundleIdentifier ?? "—")
             }
 

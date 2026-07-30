@@ -21,3 +21,19 @@ run = "./build.sh export"
 [tasks.dmg]
 description = "构建并打包为 .dmg 安装镜像"
 run = "./build.sh dmg"
+
+[tasks.sign]
+description = "sign_update 为 DMG 签名并输出 appcast 条目"
+run = "./build.sh sign"
+
+[tasks.appcast]
+description = "更新 appcast.xml 中的版本条目（基于 DMG 签名文件）"
+run = "./build.sh appcast"
+
+[tasks.release]
+description = "一键发布：构建 → DMG → 签名 → 更新 appcast.xml"
+run = "./build.sh release"
+
+[tasks.help]
+description = "显示帮助信息"
+run = "./build.sh help"

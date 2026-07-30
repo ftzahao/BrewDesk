@@ -6,18 +6,23 @@ SCHEME="BrewDesk"
 CONFIG="Release"
 DERIVED_DATA="build"
 
+APPCast="appcast.xml"
+
 usage() {
     cat <<EOF
 用法: ./build.sh [命令]
 
 命令:
-  build     构建 Release 版本（默认）
-  debug     构建 Debug 版本
-  clean     清理构建产物
-  archive   构建并归档为 .xcarchive
-  export    归档并导出 .app（需先 archive）
-  dmg       构建并打包为 .dmg 安装镜像
-  help      显示帮助信息
+  build      构建 Release 版本（默认）
+  debug      构建 Debug 版本
+  clean      清理构建产物
+  archive    构建并归档为 .xcarchive
+  export     归档并导出 .app（需先 archive）
+  dmg        构建并打包为 .dmg 安装镜像
+  sign       sign_update 为 DMG 签名并输出 appcast 条目
+  release    构建 → DMG → 签名 → 更新 appcast.xml → 打印摘要
+  appcast    更新 appcast.xml 中的版本条目（基于 DMG 签名文件）
+  help       显示帮助信息
 EOF
 }
 
@@ -115,14 +120,168 @@ do_dmg() {
     echo "✅ DMG 打包完成: $dmg_path"
 }
 
+do_sign() {
+    local dmg_path="${1:-$DERIVED_DATA/BrewDesk.dmg}"
+
+    if [ ! -f "$dmg_path" ]; then
+        echo "❌ 未找到 DMG 文件: $dmg_path"
+        echo "   请先运行 ./build.sh dmg"
+        exit 1
+    fi
+
+    # 查找 Sparkle 的 sign_update 工具
+    local sign_tool=""
+    if command -v sign_update &>/dev/null; then
+        sign_tool="sign_update"
+    elif [ -f "$DERIVED_DATA/SourcePackages/sparkle/bin/sign_update" ]; then
+        sign_tool="$DERIVED_DATA/SourcePackages/sparkle/bin/sign_update"
+    elif [ -d "/Applications/Sparkle.app" ]; then
+        sign_tool="/Applications/Sparkle.app/Contents/MacOS/sign_update"
+    else
+        # 尝试在 DerivedData 中查找
+        sign_tool=$(find "$DERIVED_DATA" -path "*/sparkle*/bin/sign_update" -type f 2>/dev/null | head -1)
+    fi
+
+    if [ -z "$sign_tool" ] || [ ! -f "$sign_tool" ]; then
+        echo "⚠️  未找到 sign_update 工具。请通过 Homebrew 安装 Sparkle CLI："
+        echo "   brew install sparkle-cli"
+        echo ""
+        echo "或者手动使用 Sparkle.app 中的工具："
+        echo "   /Applications/Sparkle.app/Contents/MacOS/sign_update $dmg_path"
+        echo ""
+        # 尝试用 openssl 计算基础信息
+        local file_size
+        file_size=$(stat -f%z "$dmg_path")
+        echo "--- 手动填写到 appcast.xml ---"
+        echo "文件大小: $file_size"
+        echo "edSignature: （运行 sign_update 工具获取）"
+        return 1
+    fi
+
+    echo "==> 签名 DMG: $(basename "$dmg_path")"
+    local sign_output
+    sign_output=$("$sign_tool" "$dmg_path")
+    echo "$sign_output"
+
+    # 解析签名输出
+    local ed_signature
+    local file_size
+    ed_signature=$(echo "$sign_output" | grep -oE 'sparkle:edSignature="[^"]+"' | head -1 | sed 's/sparkle:edSignature="//;s/"//')
+    file_size=$(stat -f%z "$dmg_path")
+
+    if [ -z "$ed_signature" ]; then
+        echo "⚠️  无法从输出中解析 edSignature，请手动填写。"
+        return 1
+    fi
+
+    # 输出到文件供其他命令使用
+    echo "$ed_signature" > "$DERIVED_DATA/last_ed_signature.txt"
+    echo "$file_size" > "$DERIVED_DATA/last_dmg_size.txt"
+    echo "$(basename "$dmg_path")" > "$DERIVED_DATA/last_dmg_name.txt"
+
+    echo ""
+    echo "=== AppCast 条目（可粘贴到 appcast.xml）==="
+    echo "edSignature: $ed_signature"
+    echo "length:      $file_size"
+}
+
+do_appcast() {
+    local sig_file="$DERIVED_DATA/last_ed_signature.txt"
+    local size_file="$DERIVED_DATA/last_dmg_size.txt"
+    local name_file="$DERIVED_DATA/last_dmg_name.txt"
+
+    if [ ! -f "$sig_file" ] || [ ! -f "$size_file" ]; then
+        echo "❌ 未找到签名信息，请先运行 ./build.sh sign"
+        return 1
+    fi
+
+    local ed_signature
+    local file_size
+    local dmg_name
+    ed_signature=$(cat "$sig_file")
+    file_size=$(cat "$size_file")
+    dmg_name=$(cat "$name_file" 2>/dev/null || echo "BrewDesk.dmg")
+
+    if [ ! -f "$APPCast" ]; then
+        echo "❌ 未找到 $APPCast"
+        return 1
+    fi
+
+    echo "==> 更新 $APPCast..."
+
+    # 从 Xcode 项目获取当前版本
+    local version
+    local build
+    version=$(grep -A1 'MARKETING_VERSION' "$PROJECT"/project.pbxproj | grep -oE '[0-9]+\.[0-9]+([0-9.]+)?' | head -1)
+    build=$(grep -A1 'CURRENT_PROJECT_VERSION' "$PROJECT"/project.pbxproj | grep -oE '[0-9]+' | head -1)
+
+    # 用 sed 替换占位符（使用 | 作为定界符，避免 Base64 中的 / 冲突）
+    if [[ "$(uname)" == "Darwin" ]]; then
+        sed -i '' "s|PLACEHOLDER_ED_SIGNATURE|$ed_signature|g" "$APPCast"
+        sed -i '' "s|PLACEHOLDER_FILE_SIZE|$file_size|g" "$APPCast"
+    else
+        sed -i "s|PLACEHOLDER_ED_SIGNATURE|$ed_signature|g" "$APPCast"
+        sed -i "s|PLACEHOLDER_FILE_SIZE|$file_size|g" "$APPCast"
+    fi
+
+    echo "✅ appcast.xml 已更新"
+    echo "   版本: $version ($build)"
+    echo "   DMG: $dmg_name"
+    echo "   edSignature: $ed_signature"
+    echo "   length: $file_size"
+}
+
+do_release() {
+    local ok=true
+
+    do_dmg || ok=false
+
+    if [ "$ok" = true ]; then
+        if do_sign; then
+            do_appcast || true
+        else
+            echo "⚠️  跳过 appcast 更新（sign_update 未找到或签名失败）"
+        fi
+    fi
+
+    echo ""
+    echo "=== 发布摘要 ==="
+    if [ -f "$DERIVED_DATA/BrewDesk.dmg" ]; then
+        echo "DMG:  $DERIVED_DATA/BrewDesk.dmg ✅"
+        local size
+        size=$(stat -f%z "$DERIVED_DATA/BrewDesk.dmg" 2>/dev/null | numfmt --to=iec 2>/dev/null || stat -f%z "$DERIVED_DATA/BrewDesk.dmg" 2>/dev/null || echo "?")
+        echo "大小: $size"
+    else
+        echo "DMG:  ❌ 未生成"
+    fi
+    echo "Cast: $APPCast"
+    if [ -f "$DERIVED_DATA/last_ed_signature.txt" ]; then
+        echo "签名: ✅ $(cat "$DERIVED_DATA/last_ed_signature.txt" | head -c 20)..."
+    else
+        echo "签名: ⚠️  未签名"
+    fi
+    echo ""
+    echo "下一步:"
+    if [ ! -f "$DERIVED_DATA/BrewDesk.dmg" ]; then
+        echo "❌ 请先修复构建错误"
+    else
+        echo "1. 在 GitHub 上创建 Release 并上传 BrewDesk.dmg"
+        echo "2. 确保 $APPCast 可通过 ${SUFeedURL:-https://github.com/ftzahao/BrewDesk/appcast.xml} 访问"
+        echo "3. git add $APPCast && git commit -m \"chore: 更新 appcast\""
+    fi
+}
+
 # 主入口
 case "${1:-build}" in
-    build)  do_build "Release" ;;
-    debug)  do_build "Debug" ;;
-    clean)  do_clean ;;
+    build)   do_build "Release" ;;
+    debug)   do_build "Debug" ;;
+    clean)   do_clean ;;
     archive) do_archive ;;
-    export) do_export ;;
-    dmg)    do_dmg ;;
-    help)   usage ;;
-    *)      echo "未知命令: $1"; usage; exit 1 ;;
+    export)  do_export ;;
+    dmg)     do_dmg ;;
+    sign)    do_sign ;;
+    appcast) do_appcast ;;
+    release) do_release ;;
+    help)    usage ;;
+    *)       echo "未知命令: $1"; usage; exit 1 ;;
 esac

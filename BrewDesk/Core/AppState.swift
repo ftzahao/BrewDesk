@@ -6,6 +6,7 @@
 import AppKit
 import Combine
 import Foundation
+import Sparkle
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -131,6 +132,17 @@ final class AppState: ObservableObject {
     @Published var notificationsEnabled: Bool = UserDefaults.standard.object(forKey: "notificationsEnabled") as? Bool ?? true {
         didSet { UserDefaults.standard.set(notificationsEnabled, forKey: "notificationsEnabled") }
     }
+
+    @Published var autoCheckForUpdates: Bool = UserDefaults.standard.object(forKey: "autoCheckForUpdates") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(autoCheckForUpdates, forKey: "autoCheckForUpdates") }
+    }
+
+    @Published var autoDownloadUpdates: Bool = UserDefaults.standard.object(forKey: "autoDownloadUpdates") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(autoDownloadUpdates, forKey: "autoDownloadUpdates") }
+    }
+
+    /// Sparkle 更新控制器（懒加载，由 BrewDeskApp 在启动后设置）
+    var updater: UpdaterController?
 
     enum AppearanceMode: String, CaseIterable, Sendable {
         case system

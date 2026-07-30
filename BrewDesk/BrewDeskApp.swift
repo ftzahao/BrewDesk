@@ -5,18 +5,26 @@
 //  Created by 师梦豪 on 2026/7/28.
 //
 
+import Sparkle
 import SwiftUI
 
 @main
 struct BrewDeskApp: App {
     @StateObject private var appState = AppState()
+    @StateObject private var updaterController = UpdaterController()
     @State private var showAbout = false
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
-                .task { await appState.bootstrap() }
+                .environmentObject(updaterController)
+                .task {
+                    appState.updater = updaterController
+                    updaterController.updater.automaticallyChecksForUpdates = appState.autoCheckForUpdates
+                    updaterController.updater.automaticallyDownloadsUpdates = appState.autoDownloadUpdates
+                    await appState.bootstrap()
+                }
                 .sheet(isPresented: $showAbout) { AboutView() }
         }
         .defaultSize(width: 1100, height: 700)
@@ -46,6 +54,14 @@ struct BrewDeskApp: App {
                 Divider()
                 Button("导出 Brewfile…") { appState.exportBrewfileInteractively() }
                     .disabled(appState.isTaskRunning || appState.installation == nil)
+            }
+            CommandGroup(after: .appInfo) {
+                Divider()
+                Button("检查更新…") {
+                    updaterController.checkForUpdates()
+                }
+                .disabled(!updaterController.canCheckForUpdates)
+                .keyboardShortcut("u", modifiers: [.command, .option])
             }
         }
 

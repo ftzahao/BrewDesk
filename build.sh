@@ -7,6 +7,7 @@ CONFIG="Release"
 DERIVED_DATA="build"
 
 APPCast="appcast.xml"
+SUFeedURL="https://raw.githubusercontent.com/ftzahao/BrewDesk/main/appcast.xml"
 
 usage() {
     cat <<EOF
@@ -266,7 +267,7 @@ do_release() {
         echo "❌ 请先修复构建错误"
     else
         echo "1. 在 GitHub 上创建 Release 并上传 BrewDesk.dmg"
-        echo "2. 确保 $APPCast 可通过 ${SUFeedURL:-https://github.com/ftzahao/BrewDesk/appcast.xml} 访问"
+        echo "2. 确保 $APPCast 可通过 ${SUFeedURL:-https://raw.githubusercontent.com/ftzahao/BrewDesk/main/appcast.xml} 访问"
         echo "3. git add $APPCast && git commit -m \"chore: 更新 appcast\""
     fi
 }

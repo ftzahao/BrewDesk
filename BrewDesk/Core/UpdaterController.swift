@@ -42,6 +42,6 @@ final class UpdaterController: NSObject, ObservableObject {
 
 extension UpdaterController: SPUUpdaterDelegate {
     func feedURLString(for updater: SPUUpdater) -> String {
-        "https://github.com/ftzahao/BrewDesk/appcast.xml"
+        "https://raw.githubusercontent.com/ftzahao/BrewDesk/main/appcast.xml"
     }
 }

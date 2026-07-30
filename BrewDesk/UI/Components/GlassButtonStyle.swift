@@ -10,6 +10,7 @@ struct GlassCapsuleButtonStyle: ButtonStyle {
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
             .foregroundStyle(tint)
+            .contentShape(Capsule())
             .clipShape(Capsule())
             .glassEffect()
             .scaleEffect(configuration.isPressed ? 0.96 : 1)

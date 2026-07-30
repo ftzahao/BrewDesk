@@ -45,7 +45,7 @@ struct ContentView: View {
         VStack(spacing: 0) {
             NavigationSplitView {
                 sidebar
-                    .frame(minWidth: 200, idealWidth: 220, maxWidth: 260)
+                    .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 360)
             } detail: {
                 detail(for: state.selectedSidebar)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

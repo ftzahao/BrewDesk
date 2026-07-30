@@ -14,8 +14,8 @@
 
 ## 系统要求
 
-- macOS 14.0+
-- Xcode 15.0+
+- macOS 26.5+
+- Xcode 26.5+
 - 已安装 Homebrew（[brew.sh](https://brew.sh)）
 
 ## 快速开始

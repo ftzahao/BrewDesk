@@ -54,6 +54,19 @@ BrewDesk/
     └── MenuBar/            # 菜单栏快捷入口
 ```
 
+## 构建脚本
+
+项目提供 `build.sh` 脚本，支持命令行构建与打包：
+
+```bash
+./build.sh build      # 构建 Release 版本（默认）
+./build.sh debug      # 构建 Debug 版本
+./build.sh clean      # 清理构建产物
+./build.sh archive    # 归档为 .xcarchive
+./build.sh export     # 从归档导出 .app
+./build.sh dmg        # 构建并打包为 .dmg 安装镜像
+```
+
 ## 许可证
 
 MIT License

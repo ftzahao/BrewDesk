@@ -1,0 +1,23 @@
+[tasks.build]
+description = "构建 Release 版本"
+run = "./build.sh build"
+
+[tasks.debug]
+description = "构建 Debug 版本"
+run = "./build.sh debug"
+
+[tasks.clean]
+description = "清理构建产物"
+run = "./build.sh clean"
+
+[tasks.archive]
+description = "构建并归档为 .xcarchive"
+run = "./build.sh archive"
+
+[tasks.export]
+description = "归档并导出 .app（需先 archive）"
+run = "./build.sh export"
+
+[tasks.dmg]
+description = "构建并打包为 .dmg 安装镜像"
+run = "./build.sh dmg"

@@ -9,7 +9,7 @@
 - **搜索** — 从 Homebrew 核心仓库及已添加的 Tap 中搜索包
 - **Taps** — 管理 Homebrew Tap，添加 / 移除第三方仓库
 - **服务** — 启动、停止、重启 Homebrew 管理的后台服务（如数据库、消息队列等）
-- **维护** — 运行 `brew doctor`，清理缓存，释放磁盘空间
+- **维护** — 清理缓存，释放磁盘空间
 - **设置** — 自定义 Homebrew 路径、镜像源等配置
 
 ## 系统要求
@@ -38,7 +38,7 @@ BrewDesk/
 │   │   ├── BrewClient.swift    # 命令行调用封装
 │   │   ├── BrewJSON.swift      # JSON 输出解析
 │   │   ├── BrewLocator.swift   # brew 可执行文件定位
-│   │   └── DoctorParser.swift  # brew doctor 输出解析
+│   │   └── DoctorParser.swift  # 输出解析
 │   └── Models/             # 数据模型
 ├── Features/           # 各功能页面视图
 │   ├── Installed/

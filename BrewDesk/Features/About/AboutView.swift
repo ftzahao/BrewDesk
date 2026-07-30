@@ -91,7 +91,7 @@ struct AboutView: View {
             Section("功能") {
                 Label("浏览、搜索、安装与卸载 formula / cask", systemImage: "shippingbox")
                 Label("检查更新、固定版本、服务管理", systemImage: "arrow.triangle.2.circlepath")
-                Label("Doctor、Cleanup、Brewfile 迁移", systemImage: "stethoscope")
+                Label("Cleanup、Brewfile 迁移", systemImage: "stethoscope")
                 Label("菜单栏状态与任务通知", systemImage: "bell")
             }
 

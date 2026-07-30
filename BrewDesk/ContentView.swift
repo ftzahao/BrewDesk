@@ -42,17 +42,13 @@ struct ContentView: View {
     }
 
     private var mainInterface: some View {
-        VStack(spacing: 0) {
-            NavigationSplitView {
-                sidebar
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 360)
-            } detail: {
-                detail(for: state.selectedSidebar)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .id(state.selectedSidebar)
-            }
-
-            LogConsoleView(state: state)
+        NavigationSplitView {
+            sidebar
+                .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 360)
+        } detail: {
+            detail(for: state.selectedSidebar)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .id(state.selectedSidebar)
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -218,7 +214,7 @@ struct ContentView: View {
         switch item {
         case .outdated: state.outdated.count
         case .services: state.runningServiceCount
-        case .maintenance: state.doctorIssues.count
+        case .maintenance: 0
         default: 0
         }
     }

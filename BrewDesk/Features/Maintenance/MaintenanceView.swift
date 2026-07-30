@@ -10,13 +10,11 @@ import UniformTypeIdentifiers
 struct MaintenanceView: View {
     @ObservedObject var state: AppState
     @State private var confirmCleanup = false
-    @State private var selectedIssueID: DoctorIssue.ID?
     @State private var brewfileImporterMode: BrewfileImporterMode?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                doctorSection
                 cleanupSection
                 brewfileSection
             }
@@ -30,14 +28,13 @@ struct MaintenanceView: View {
         }
         .navigationTitle("维护")
         .task {
-            if !state.doctorRan { await state.runDoctor() }
             if state.cleanupPreview == nil { await state.loadCleanupPreview() }
         }
         .alert("确认清理？", isPresented: $confirmCleanup) {
             Button("清理", role: .destructive) { Task { await state.runCleanup() } }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("将执行 brew cleanup -s，删除旧版本下载与过期缓存。此操作不可撤销。")
+            Text("将执行 \"brew cleanup --prune=all\"，删除所有缓存。此操作不可撤销。")
         }
         .fileImporter(
             isPresented: Binding(
@@ -49,58 +46,11 @@ struct MaintenanceView: View {
         ) { handleBrewfileImport($0) }
     }
 
-    private var doctorSection: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Label("brew doctor", systemImage: "stethoscope").font(.headline)
-                    Spacer()
-                    Button { Task { await state.runDoctor() } } label: {
-                        if state.isLoadingDoctor {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Label("重新检查", systemImage: "arrow.clockwise")
-                        }
-                    }
-                    .buttonStyle(.glassCapsule)
-                    .disabled(state.isLoadingDoctor || state.isTaskRunning)
-                }
-                if state.isLoadingDoctor && !state.doctorRan {
-                    ProgressView("正在检查…")
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 12)
-                } else if state.doctorRan && state.doctorHealthy {
-                    Label("系统看起来正常，可以安心使用 Homebrew。", systemImage: "checkmark.seal.fill")
-                        .foregroundStyle(.green).padding(.vertical, 4)
-                } else if state.doctorIssues.isEmpty && state.doctorRan {
-                    Text("未解析到具体警告，原始输出如下：").foregroundStyle(.secondary)
-                    Text(state.doctorRaw.isEmpty ? "（无输出）" : state.doctorRaw)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(8)
-                        .background {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(.regularMaterial)
-                        }
-                } else {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(state.doctorIssues) { issue in
-                            DoctorIssueCard(issue: issue, isExpanded: selectedIssueID == issue.id) {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    selectedIssueID = selectedIssueID == issue.id ? nil : issue.id
-                                }
-                            }
-                        }
-                    }
-                }
-            }.padding(4)
-        } label: { Text("健康检查") }
-    }
-
     private var cleanupSection: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Label("brew cleanup", systemImage: "trash").font(.headline)
+                    Label("清除缓存", systemImage: "trash").font(.headline).help("brew cleanup --prune=all")
                     Spacer()
                     Button { Task { await state.loadCleanupPreview() } } label: {
                         if state.isLoadingCleanupPreview {
@@ -113,7 +63,7 @@ struct MaintenanceView: View {
                     .disabled(state.isLoadingCleanupPreview || state.isTaskRunning)
                     Button("执行清理", role: .destructive) { confirmCleanup = true }
                         .buttonStyle(.glassCapsule(tint: .red))
-                        .disabled(state.isTaskRunning || (state.cleanupPreview?.isEmpty ?? true))
+                        .disabled(state.isTaskRunning)
                 }
                 if let preview = state.cleanupPreview {
                     Text(preview.summary).foregroundStyle(.secondary)
@@ -206,47 +156,3 @@ struct MaintenanceView: View {
 }
 
 private enum BrewfileImporterMode { case install, check }
-
-private struct DoctorIssueCard: View {
-    let issue: DoctorIssue
-    var isExpanded: Bool
-    var onToggle: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button(action: onToggle) {
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: issue.severity.systemImage)
-                        .foregroundStyle(issue.severity == .error ? Color.red : Color.orange)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(issue.title).font(.body.weight(.medium))
-                            .foregroundStyle(.primary).multilineTextAlignment(.leading)
-                        if !isExpanded, !issue.detail.isEmpty {
-                            Text(issue.detail).font(.caption).foregroundStyle(.secondary)
-                                .lineLimit(2).multilineTextAlignment(.leading)
-                        }
-                    }
-                    Spacer()
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
-            if isExpanded, !issue.detail.isEmpty {
-                Text(issue.detail)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(8)
-                    .background {
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(.regularMaterial)
-                    }
-            }
-        }
-        .padding(10)
-        .background {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(.regularMaterial)
-        }
-    }
-}

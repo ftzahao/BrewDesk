@@ -30,7 +30,7 @@
 
 - 浏览、搜索、安装与卸载 formula / cask
 - 检查更新、固定版本、服务管理
-- Doctor、Cleanup、Brewfile 迁移
+- Cleanup、Brewfile 迁移
 - 菜单栏状态与任务通知
 - 自动更新
 

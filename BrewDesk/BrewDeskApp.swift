@@ -43,10 +43,6 @@ struct BrewDeskApp: App {
                     .keyboardShortcut("u", modifiers: [.command, .shift])
                     .disabled(appState.isTaskRunning || appState.outdated.isEmpty)
                 Divider()
-                Button("运行 doctor") {
-                    appState.selectedSidebar = .maintenance
-                    Task { await appState.runDoctor() }
-                }.disabled(appState.installation == nil)
                 Button("清理预览") {
                     appState.selectedSidebar = .maintenance
                     Task { await appState.loadCleanupPreview() }

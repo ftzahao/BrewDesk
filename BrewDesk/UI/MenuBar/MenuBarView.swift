@@ -47,10 +47,6 @@ struct MenuBarMenuContent: View {
                 Task { await state.upgradeAll() }
             }.disabled(state.outdated.isEmpty || state.isTaskRunning)
             Divider()
-            Button("运行 doctor") {
-                state.openMainWindow(sidebar: .maintenance)
-                Task { await state.runDoctor() }
-            }.disabled(state.isTaskRunning)
             if state.isTaskRunning {
                 Divider()
                 Text(state.currentTaskTitle ?? "任务运行中…").foregroundStyle(.secondary)

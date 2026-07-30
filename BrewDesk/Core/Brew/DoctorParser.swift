@@ -5,67 +5,6 @@
 
 import Foundation
 
-nonisolated enum DoctorParser {
-    static func parse(_ text: String) -> [DoctorIssue] {
-        let lines = text
-            .split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
-            .map(String.init)
-
-        var issues: [DoctorIssue] = []
-        var index = 0
-
-        while index < lines.count {
-            let line = lines[index].trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("Warning:") || line.hasPrefix("Error:") {
-                let isError = line.hasPrefix("Error:")
-                let title = line
-                    .replacingOccurrences(of: "Warning:", with: "")
-                    .replacingOccurrences(of: "Error:", with: "")
-                    .trimmingCharacters(in: .whitespaces)
-
-                index += 1
-                var detailLines: [String] = []
-                while index < lines.count {
-                    let next = lines[index]
-                    let trimmed = next.trimmingCharacters(in: .whitespaces)
-                    if trimmed.hasPrefix("Warning:") || trimmed.hasPrefix("Error:") {
-                        break
-                    }
-                    // Stop at trailing blank runs after some content is fine; keep body lines.
-                    detailLines.append(next)
-                    index += 1
-                }
-
-                let detail = detailLines
-                    .joined(separator: "\n")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-
-                issues.append(
-                    DoctorIssue(
-                        severity: isError ? .error : .warning,
-                        title: title.isEmpty ? (isError ? "Error" : "Warning") : title,
-                        detail: detail
-                    )
-                )
-                continue
-            }
-            index += 1
-        }
-
-        // Healthy doctor output often has no Warning/Error blocks.
-        if issues.isEmpty {
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty,
-               trimmed.localizedCaseInsensitiveContains("ready to brew")
-                || trimmed.localizedCaseInsensitiveContains("Your system is ready") {
-                return []
-            }
-        }
-
-        return issues
-    }
-}
-
 nonisolated enum CleanupParser {
     static func parse(_ text: String) -> CleanupPreview {
         let lines = text

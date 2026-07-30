@@ -131,7 +131,6 @@ struct SettingsView: View {
             Section {
                 LabeledContent("刷新全部", value: "⇧⌘R")
                 LabeledContent("全部升级", value: "⇧⌘U")
-                LabeledContent("展开/收起日志", value: "⇧⌘L")
             } header: {
                 Label("快捷键", systemImage: "command")
             }

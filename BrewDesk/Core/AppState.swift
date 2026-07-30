@@ -61,7 +61,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
 
 enum TaskKind: String, Sendable {
     case refresh, update, upgrade, install, uninstall, search
-    case doctor, cleanup, service, tap, bundle, pin
+    case cleanup, service, tap, bundle, pin
 
     var title: String {
         switch self {
@@ -71,7 +71,6 @@ enum TaskKind: String, Sendable {
         case .install: "安装"
         case .uninstall: "卸载"
         case .search: "搜索"
-        case .doctor: "brew doctor"
         case .cleanup: "清理"
         case .service: "服务"
         case .tap: "Tap"
@@ -98,10 +97,6 @@ final class AppState: ObservableObject {
     @Published var taps: [BrewTap] = []
     @Published var selectedTapID: String?
 
-    @Published var doctorIssues: [DoctorIssue] = []
-    @Published var doctorRaw: String = ""
-    @Published var doctorHealthy = false
-    @Published var doctorRan = false
     @Published var cleanupPreview: CleanupPreview?
 
     @Published var isLoadingInstalled = false
@@ -110,13 +105,10 @@ final class AppState: ObservableObject {
     @Published var isLoadingServices = false
     @Published var isLoadingTaps = false
     @Published var isLoadingTapPackages = false
-    @Published var isLoadingDoctor = false
     @Published var isLoadingCleanupPreview = false
 
     @Published var isTaskRunning = false
     @Published var currentTaskTitle: String?
-    @Published var logText: String = ""
-    @Published var isLogExpanded = false
 
     @Published var lastError: String?
     @Published var lastStatus: String?
@@ -322,36 +314,28 @@ final class AppState: ObservableObject {
 
     func addTap(_ name: String) async {
         await runTask(kind: .tap, title: "添加 Tap \(name)") {
-            try await self.client.addTap(name) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.addTap(name) { _ in }
             await self.loadTaps()
         }
     }
 
     func removeTap(_ name: String) async {
         await runTask(kind: .tap, title: "删除 Tap \(name)") {
-            try await self.client.removeTap(name) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.removeTap(name) { _ in }
             await self.loadTaps()
         }
     }
 
     func trustTap(_ name: String) async {
         await runTask(kind: .tap, title: "信任 Tap \(name)") {
-            try await self.client.trustTap(name) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.trustTap(name) { _ in }
             await self.loadTaps()
         }
     }
 
     func untrustTap(_ name: String) async {
         await runTask(kind: .tap, title: "取消信任 Tap \(name)") {
-            try await self.client.untrustTap(name) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.untrustTap(name) { _ in }
             await self.loadTaps()
         }
     }
@@ -419,22 +403,6 @@ final class AppState: ObservableObject {
         }
     }
 
-    func runDoctor() async {
-        guard installation != nil else { return }
-        isLoadingDoctor = true
-        defer { isLoadingDoctor = false }
-        do {
-            let result = try await client.doctor()
-            doctorIssues = result.issues
-            doctorRaw = result.raw
-            doctorHealthy = result.isHealthy
-            doctorRan = true
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
     func loadCleanupPreview() async {
         guard installation != nil else { return }
         isLoadingCleanupPreview = true
@@ -451,9 +419,7 @@ final class AppState: ObservableObject {
 
     func brewUpdate() async {
         await runTask(kind: .update, title: "更新 Homebrew") {
-            try await self.client.update { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.update { _ in }
             await self.refreshAll()
         }
     }
@@ -463,9 +429,7 @@ final class AppState: ObservableObject {
         let names = packages.map(\.name)
         let title = packages.count == 1 ? "升级 \(names[0])" : "升级 \(packages.count) 个软件包"
         await runTask(kind: .upgrade, title: title) {
-            try await self.client.upgrade(names: names) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.upgrade(names: names) { _ in }
             await self.refreshAll()
         }
     }
@@ -474,9 +438,7 @@ final class AppState: ObservableObject {
 
     func install(_ package: Package) async {
         await runTask(kind: .install, title: "安装 \(package.name)") {
-            try await self.client.install(name: package.name, kind: package.kind) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.install(name: package.name, kind: package.kind) { _ in }
             await self.refreshAll()
             if let updated = try? await self.client.info(name: package.name, kind: package.kind) {
                 self.patchSearchResult(updated)
@@ -487,9 +449,7 @@ final class AppState: ObservableObject {
     func uninstall(_ package: Package) async {
         let title = "卸载 \(package.name)"
         await runTask(kind: .uninstall, title: title) {
-            try await self.client.uninstall(name: package.name, kind: package.kind) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.uninstall(name: package.name, kind: package.kind) { _ in }
             if self.selectedPackageID == package.id { self.selectedPackageID = nil }
             await self.refreshAll()
         }
@@ -497,9 +457,7 @@ final class AppState: ObservableObject {
 
     func pinPackage(_ package: Package) async {
         await runTask(kind: .pin, title: "固定 \(package.name)") {
-            try await self.client.pin(name: package.name, kind: package.kind) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.pin(name: package.name, kind: package.kind) { _ in }
             await self.refreshAll()
             await self.refreshSelectedPackage(package)
         }
@@ -507,9 +465,7 @@ final class AppState: ObservableObject {
 
     func unpinPackage(_ package: Package) async {
         await runTask(kind: .pin, title: "取消固定 \(package.name)") {
-            try await self.client.unpin(name: package.name, kind: package.kind) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.unpin(name: package.name, kind: package.kind) { _ in }
             await self.refreshAll()
             await self.refreshSelectedPackage(package)
         }
@@ -531,37 +487,29 @@ final class AppState: ObservableObject {
     }
 
     func runCleanup() async {
-        await runTask(kind: .cleanup, title: "brew cleanup") {
-            try await self.client.cleanup(scrub: true) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+        await runTask(kind: .cleanup, title: "清理缓存") {
+            try await self.client.cleanup(scrub: true) { _ in }
             await self.loadCleanupPreview()
         }
     }
 
     func startService(_ service: BrewService) async {
         await runTask(kind: .service, title: "启动 \(service.name)") {
-            try await self.client.startService(service.name) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.startService(service.name) { _ in }
             await self.loadServices()
         }
     }
 
     func stopService(_ service: BrewService) async {
         await runTask(kind: .service, title: "停止 \(service.name)") {
-            try await self.client.stopService(service.name) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.stopService(service.name) { _ in }
             await self.loadServices()
         }
     }
 
     func restartService(_ service: BrewService) async {
         await runTask(kind: .service, title: "重启 \(service.name)") {
-            try await self.client.restartService(service.name) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.restartService(service.name) { _ in }
             await self.loadServices()
         }
     }
@@ -570,9 +518,7 @@ final class AppState: ObservableObject {
 
     func exportBrewfile(to fileURL: URL) async {
         await runTask(kind: .bundle, title: "导出 Brewfile") {
-            try await self.client.dumpBrewfile(to: fileURL) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.dumpBrewfile(to: fileURL) { _ in }
         }
     }
 
@@ -591,9 +537,7 @@ final class AppState: ObservableObject {
 
     func importBrewfile(from fileURL: URL) async {
         await runTask(kind: .bundle, title: "安装 Brewfile") {
-            try await self.client.installBrewfile(from: fileURL) { chunk in
-                Task { @MainActor in self.appendLog(chunk) }
-            }
+            try await self.client.installBrewfile(from: fileURL) { _ in }
             await self.refreshAll()
         }
     }
@@ -625,10 +569,6 @@ final class AppState: ObservableObject {
         Task { await client.cancel() }
     }
 
-    func clearLog() {
-        logText = ""
-    }
-
     // MARK: - Private
 
     private func runTask(kind: TaskKind, title: String, work: @escaping () async throws -> Void) async {
@@ -638,8 +578,6 @@ final class AppState: ObservableObject {
         }
         isTaskRunning = true
         currentTaskTitle = title
-        isLogExpanded = true
-        appendLog("\n—— \(title) ——\n")
         lastError = nil
         lastStatus = nil
         defer {
@@ -648,22 +586,17 @@ final class AppState: ObservableObject {
         }
         do {
             try await work()
-            appendLog("\n✓ 完成：\(title)\n")
             showStatus("完成：\(title)")
             notifyIfNeeded(title: "BrewDesk", body: "完成：\(title)", success: true)
         } catch is CancellationError {
-            appendLog("\n✗ 已取消\n")
         } catch let error as BrewError {
             if case .cancelled = error {
-                appendLog("\n✗ 已取消\n")
             } else {
                 lastError = error.localizedDescription
-                appendLog("\n✗ 失败：\(error.localizedDescription)\n")
                 notifyIfNeeded(title: "BrewDesk 失败", body: title, success: false)
             }
         } catch {
             lastError = error.localizedDescription
-            appendLog("\n✗ 失败：\(error.localizedDescription)\n")
             notifyIfNeeded(title: "BrewDesk 失败", body: title, success: false)
         }
         _ = kind
@@ -682,11 +615,6 @@ final class AppState: ObservableObject {
     private func notifyIfNeeded(title: String, body: String, success: Bool) {
         guard notificationsEnabled else { return }
         NotificationService.post(title: title, body: body, success: success)
-    }
-
-    private func appendLog(_ chunk: String) {
-        logText.append(chunk)
-        if logText.count > 200_000 { logText = String(logText.suffix(150_000)) }
     }
 
     private func patchSearchResult(_ package: Package) {

@@ -144,36 +144,15 @@ actor BrewClient {
         try await runStreaming(args, onOutput: onOutput)
     }
 
-    // MARK: - Doctor / Cleanup
-
-    /// `brew doctor` exits non-zero when warnings exist; that is not a hard failure.
-    func doctor() async throws -> (issues: [DoctorIssue], raw: String, isHealthy: Bool) {
-        let install = try requireInstallation()
-        let result = try await runRead(install: install, arguments: ["doctor"], allowNonZero: true)
-        if result.exitCode != 0 && result.exitCode != 1 {
-            let command = "brew doctor"
-            throw BrewError.nonZeroExit(
-                command: command,
-                code: result.exitCode,
-                stderr: result.stderr.isEmpty ? result.stdout : result.stderr
-            )
-        }
-        let combined = [result.stdout, result.stderr]
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n")
-        let issues = DoctorParser.parse(combined)
-        let healthy = result.exitCode == 0 && issues.isEmpty
-        return (issues, combined, healthy)
-    }
-
+    // MARK: - Cleanup
     func cleanupPreview() async throws -> CleanupPreview {
-        let result = try await run(["cleanup", "-n", "-s"])
+        let result = try await run(["cleanup", "-n", "--prune=all"])
         return CleanupParser.parse(result.stdout + result.stderr)
     }
 
     func cleanup(scrub: Bool = true, onOutput: @escaping @Sendable (String) -> Void) async throws {
         var args = ["cleanup"]
-        if scrub { args.append("-s") }
+        if scrub { args.append("--prune=all") }
         try await runStreaming(args, onOutput: onOutput)
     }
 

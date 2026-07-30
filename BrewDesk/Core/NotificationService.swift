@@ -4,12 +4,13 @@
 //
 
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 enum NotificationService {
     private static let center = UNUserNotificationCenter.current()
 
     static func requestAuthorizationIfNeeded() {
+        let center = center
         center.getNotificationSettings { settings in
             guard settings.authorizationStatus == .notDetermined else { return }
             center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
@@ -17,6 +18,7 @@ enum NotificationService {
     }
 
     static func post(title: String, body: String, success: Bool = true) {
+        let center = center
         center.getNotificationSettings { settings in
             guard settings.authorizationStatus == .authorized
                 || settings.authorizationStatus == .provisional

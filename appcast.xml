@@ -9,14 +9,14 @@
         <link>https://github.com/ftzahao/BrewDesk</link>
 
         <item>
-            <title>BrewDesk</title>
-            <pubDate>Thu, 31 Jul 2026 11:26:00 +0800</pubDate>
+            <title>BrewDesk 1.0.5</title>
+            <pubDate>五, 31  7月 2026 12:38:53 +0800</pubDate>
             <sparkle:channel>release</sparkle:channel>
             <sparkle:version>1.0.5</sparkle:version>
             <sparkle:shortVersionString>1.0.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.5</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/ftzahao/BrewDesk/releases/download/1.0.5/BrewDesk.dmg" length="2407129" type="application/octet-stream" sparkle:edSignature="jvVtc0ZbLOkA34RPWCo6MgxHWZ2VHS9gJlu3/BME/RX6bnYP9wspTXIhY/zwZG6aeZ3h4SQFUTwt3ajCBkJ5Bg==" />
+            <enclosure url="https://github.com/ftzahao/BrewDesk/releases/download/1.0.5/BrewDesk.dmg" length="2407073" type="application/octet-stream" sparkle:edSignature="pA6dnAcSByMbHFZDAO1JkxFSYGW0qKSXqQB4+InGAyVDLIEDaIdAEz8R1vYZ3ZOxdjXunVrpOp8ZuDC4FEhtBw==" />
             <description sparkle:format="markdown"><![CDATA[
 ## 1.0.5
 

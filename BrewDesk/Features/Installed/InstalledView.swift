@@ -62,6 +62,7 @@ struct InstalledView: View {
             ForEach(packages) { pkg in
                 PackageRowView(package: pkg)
                     .tag(Optional(pkg.id))
+                    .id(pkg.id)
                     .contextMenu {
                         if pkg.isOutdated {
                             Button("升级") { Task { await state.upgrade(packages: [pkg]) } }

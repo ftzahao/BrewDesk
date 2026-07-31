@@ -37,8 +37,8 @@ struct ContentView: View {
                 .padding()
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: state.lastError)
-        .animation(.easeInOut(duration: 0.2), value: state.lastStatus)
+        .animation(.easeOut(duration: 0.12), value: state.lastError)
+        .animation(.easeOut(duration: 0.12), value: state.lastStatus)
     }
 
     private var mainInterface: some View {

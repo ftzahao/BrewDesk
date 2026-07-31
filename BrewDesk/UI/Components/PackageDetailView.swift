@@ -72,7 +72,7 @@ struct PackageDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background {
             Rectangle()
-                .fill(.regularMaterial)
+                .fill(.thinMaterial)
                 .ignoresSafeArea()
         }
         .sheet(isPresented: $showGraph) {
@@ -105,7 +105,7 @@ struct PackageDetailView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background {
-                        Capsule().fill(.regularMaterial)
+                        Capsule().fill(.thinMaterial)
                     }
 
                 statusBadge

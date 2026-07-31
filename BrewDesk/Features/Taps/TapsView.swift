@@ -151,10 +151,8 @@ struct TapsView: View {
                             if let pkg = await state.lookupTapPackage(named: name) {
                                 viewingPackage = pkg
                             } else {
-                                // Fallback: go to search
-                                state.selectedSidebar = .search
-                                state.searchQuery = name
-                                await state.runSearch()
+                                // Fallback: 进入主页搜索结果
+                                state.openSearch(query: name)
                             }
                         }
                     },

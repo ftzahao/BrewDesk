@@ -1,11 +1,13 @@
 //
-//  SearchView.swift
+//  SearchResultsView.swift
 //  BrewDesk
+//
+//  搜索结果视图：由主页搜索框激活，展示匹配 formula / cask 的完整信息。
 //
 
 import SwiftUI
 
-struct SearchView: View {
+struct SearchResultsView: View {
     @ObservedObject var state: AppState
     @State private var pendingUninstall: Package?
     @FocusState private var searchFocused: Bool
@@ -18,7 +20,23 @@ struct SearchView: View {
         } detail: {
             detailColumn
         }
-        .navigationTitle("搜索")
+        .navigationTitle("搜索结果")
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    state.deactivateSearch()
+                } label: {
+                    Label("返回主页", systemImage: "chevron.left")
+                }
+                .help("返回主页")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                if state.isSearching {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+        }
         .uninstallConfirmation(
             package: $pendingUninstall,
             dependents: { state.dependents(of: $0) },
@@ -34,7 +52,14 @@ struct SearchView: View {
                     .textFieldStyle(.roundedBorder)
                     .focused($searchFocused)
                     .onSubmit { Task { await state.runSearch() } }
-                    .onChange(of: state.searchQuery) { _, _ in state.scheduleSearch() }
+                    .onChange(of: state.searchQuery) { _, newValue in
+                        let q = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if q.isEmpty {
+                            state.deactivateSearch()
+                        } else {
+                            state.scheduleSearch()
+                        }
+                    }
 
                 Button("搜索") { Task { await state.runSearch() } }
                     .buttonStyle(.glassCapsule)

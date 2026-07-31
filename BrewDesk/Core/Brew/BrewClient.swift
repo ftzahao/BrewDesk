@@ -54,6 +54,14 @@ actor BrewClient {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    /// 全部可安装包名（本地 tap 目录即时读取，毫秒级）。
+    /// formula 与 cask 分开返回，避免同名 token 混淆。
+    func allPackageNames() async throws -> (formulae: [String], casks: [String]) {
+        async let formulae = runNameList(["formulae"])
+        async let casks = runNameList(["casks"])
+        return (try await formulae, try await casks)
+    }
+
     func search(query: String) async throws -> [Package] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
@@ -426,6 +434,24 @@ actor BrewClient {
             .split(whereSeparator: \.isNewline)
             .map { String($0).trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && !$0.hasPrefix("==>") }
+    }
+
+    /// 解析 `brew formulae` / `brew casks` 这类纯名称列表输出。
+    private func runNameList(_ arguments: [String]) async throws -> [String] {
+        let install = try requireInstallation()
+        let result = try await runRead(install: install, arguments: arguments, allowNonZero: false)
+        if result.exitCode != 0 {
+            let command = (["brew"] + arguments).joined(separator: " ")
+            throw BrewError.nonZeroExit(
+                command: command,
+                code: result.exitCode,
+                stderr: result.stderr.isEmpty ? result.stdout : result.stderr
+            )
+        }
+        return result.stdout
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("==") }
     }
 
     private func runData(_ arguments: [String]) async throws -> Data {

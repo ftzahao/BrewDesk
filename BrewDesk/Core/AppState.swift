@@ -11,9 +11,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
+    case home
     case installed
     case outdated
-    case search
     case taps
     case services
     case maintenance
@@ -23,9 +23,9 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
+        case .home: "主页"
         case .installed: "已安装"
         case .outdated: "可更新"
-        case .search: "搜索"
         case .taps: "Taps"
         case .services: "服务"
         case .maintenance: "维护"
@@ -35,9 +35,9 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
 
     var systemImage: String {
         switch self {
+        case .home: "house"
         case .installed: "shippingbox"
         case .outdated: "arrow.triangle.2.circlepath"
-        case .search: "magnifyingglass"
         case .taps: "square.grid.2x2"
         case .services: "bolt.horizontal.circle"
         case .maintenance: "stethoscope"
@@ -48,9 +48,9 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
     /// Filled variant for sidebar icon display.
     var filledImage: String {
         switch self {
+        case .home: "house.fill"
         case .installed: "shippingbox.fill"
         case .outdated: "arrow.triangle.2.circlepath"
-        case .search: "magnifyingglass"
         case .taps: "square.grid.2x2"
         case .services: "bolt.horizontal.circle.fill"
         case .maintenance: "stethoscope"
@@ -85,14 +85,20 @@ final class AppState: ObservableObject {
     let client = BrewClient()
 
     @Published var installation: BrewInstallation?
-    @Published var selectedSidebar: SidebarItem = .installed
+    @Published var selectedSidebar: SidebarItem = .home
     @Published var selectedPackageID: Package.ID?
     @Published var selectedServiceID: BrewService.ID?
 
     @Published var installed: [Package] = []
     @Published var outdated: [Package] = []
+    /// 全部可安装包目录（轻量：名称 + 类型 + 已安装状态合并），详情按需加载
+    @Published var catalog: [Package] = []
+    /// 主页详情缓存：按包 id 缓存拉取到的完整信息
+    @Published var catalogDetailCache: [Package.ID: Package] = [:]
     @Published var searchResults: [Package] = []
     @Published var searchQuery: String = ""
+    /// 是否处于搜索结果视图（由主页搜索框激活）
+    @Published var isSearchActive = false
     @Published var services: [BrewService] = []
     @Published var taps: [BrewTap] = []
     @Published var selectedTapID: String?
@@ -101,6 +107,7 @@ final class AppState: ObservableObject {
 
     @Published var isLoadingInstalled = false
     @Published var isLoadingOutdated = false
+    @Published var isLoadingCatalog = false
     @Published var isSearching = false
     @Published var isLoadingServices = false
     @Published var isLoadingTaps = false
@@ -257,7 +264,8 @@ final class AppState: ObservableObject {
         async let b: Void = loadOutdated()
         async let c: Void = loadServices()
         async let d: Void = loadTaps()
-        _ = await (a, b, c, d)
+        async let e: Void = loadCatalog()
+        _ = await (a, b, c, d, e)
     }
 
     func loadInstalled() async {
@@ -269,6 +277,7 @@ final class AppState: ObservableObject {
             // 安装状态可能已变化，清空 cask 图标缓存
             CaskIconCache.shared.invalidate()
             enrichOutdatedWithInstalledInfo()
+            enrichCatalogWithInstalledInfo()
             lastError = nil
         } catch is CancellationError {} catch {
             lastError = error.localizedDescription
@@ -282,10 +291,123 @@ final class AppState: ObservableObject {
         do {
             outdated = try await client.outdatedPackages()
             enrichOutdatedWithInstalledInfo()
+            enrichCatalogWithInstalledInfo()
             lastError = nil
         } catch is CancellationError {} catch {
             lastError = error.localizedDescription
         }
+    }
+
+    /// 加载全部可安装包目录（名称 + 类型），毫秒级完成。
+    func loadCatalog() async {
+        guard installation != nil else { return }
+        isLoadingCatalog = true
+        defer { isLoadingCatalog = false }
+        do {
+            let names = try await client.allPackageNames()
+            var result: [Package] = []
+            result.reserveCapacity(names.formulae.count + names.casks.count)
+            for name in names.formulae {
+                result.append(
+                    Package(
+                        name: name,
+                        kind: .formula,
+                        isInstalled: false,
+                        isOutdated: false,
+                        isPinned: false,
+                        dependencies: [],
+                        installedOnRequest: false
+                    )
+                )
+            }
+            for name in names.casks {
+                result.append(
+                    Package(
+                        name: name,
+                        kind: .cask,
+                        isInstalled: false,
+                        isOutdated: false,
+                        isPinned: false,
+                        dependencies: [],
+                        installedOnRequest: false
+                    )
+                )
+            }
+            catalog = result.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+            enrichCatalogWithInstalledInfo()
+            lastError = nil
+        } catch is CancellationError {} catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// 用已安装/可更新列表补全目录的安装状态与版本信息。
+    private func enrichCatalogWithInstalledInfo() {
+        guard !installed.isEmpty else {
+            // 没有任何已安装包时，清掉目录中的安装/更新标记
+            if catalog.contains(where: \.isInstalled) {
+                catalog = catalog.map { pkg in
+                    var copy = pkg
+                    copy.isInstalled = false
+                    copy.isOutdated = false
+                    copy.isPinned = false
+                    return copy
+                }
+            }
+            return
+        }
+        let installedByToken = Dictionary(
+            installed.map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let outdatedTokens = Set(outdated.map(\.name))
+        var newCatalog = catalog
+        var changed = false
+        for idx in newCatalog.indices {
+            let pkg = newCatalog[idx]
+            guard let inst = installedByToken[pkg.name], inst.kind == pkg.kind else { continue }
+            var copy = pkg
+            copy.isInstalled = true
+            copy.isOutdated = outdatedTokens.contains(pkg.name)
+            copy.isPinned = inst.isPinned
+            copy.version = inst.version
+            copy.latestVersion = inst.latestVersion
+            copy.desc = inst.desc
+            copy.homepage = inst.homepage
+            copy.dependencies = inst.dependencies
+            copy.installedTime = inst.installedTime
+            copy.installedOnRequest = inst.installedOnRequest
+            copy.caskArtifacts = inst.caskArtifacts
+            copy.caskDisplayNames = inst.caskDisplayNames
+            if copy != pkg {
+                newCatalog[idx] = copy
+                changed = true
+            }
+        }
+        if changed {
+            catalog = newCatalog
+        }
+    }
+
+    /// 主页详情：优先缓存，未命中时拉取完整信息并缓存。
+    func catalogDetail(for package: Package) async -> Package {
+        if let cached = catalogDetailCache[package.id] {
+            return cached
+        }
+        do {
+            if let full = try await client.info(name: package.name, kind: package.kind) {
+                catalogDetailCache[full.id] = full
+                if let idx = catalog.firstIndex(where: { $0.id == full.id }) {
+                    catalog[idx] = full
+                }
+                return full
+            }
+        } catch is CancellationError {} catch {
+            lastError = error.localizedDescription
+        }
+        return package
     }
 
     /// outdated 列表来自 `brew outdated --json`，不含 cask 的 artifacts 信息；
@@ -417,6 +539,37 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// 从主页搜索框进入搜索结果视图。
+    func openSearch(query: String) {
+        searchTask?.cancel()
+        searchQuery = query
+        isSearchActive = true
+        selectedSidebar = .home
+        Task { await runSearch() }
+    }
+
+    /// 退出搜索结果视图，返回主页。
+    func deactivateSearch() {
+        searchTask?.cancel()
+        isSearchActive = false
+        searchQuery = ""
+        searchResults = []
+    }
+
+    /// 主页搜索框输入时：防抖后激活搜索结果视图并执行搜索。
+    func scheduleSearchAndActivate(delayNanoseconds: UInt64 = 450_000_000) {
+        searchTask?.cancel()
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return }
+        guard q.count >= 2 else { return }
+        searchTask = Task {
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard !Task.isCancelled else { return }
+            isSearchActive = true
+            await runSearch()
+        }
+    }
+
     func scheduleSearch(delayNanoseconds: UInt64 = 450_000_000) {
         searchTask?.cancel()
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -503,9 +656,7 @@ final class AppState: ObservableObject {
             selectedPackageID = pkg.id
             return
         }
-        selectedSidebar = .search
-        searchQuery = name
-        Task { await runSearch() }
+        openSearch(query: name)
     }
 
     func setSelectedPackageID(_ id: Package.ID?) {
@@ -646,6 +797,10 @@ final class AppState: ObservableObject {
     private func patchSearchResult(_ package: Package) {
         if let idx = searchResults.firstIndex(where: { $0.id == package.id }) {
             searchResults[idx] = package
+        }
+        catalogDetailCache[package.id] = package
+        if let idx = catalog.firstIndex(where: { $0.id == package.id }) {
+            catalog[idx] = package
         }
     }
 

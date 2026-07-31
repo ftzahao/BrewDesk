@@ -30,7 +30,33 @@ struct PackageDetailView: View {
             VStack(alignment: .leading, spacing: 20) {
                 header
                 actions
+                if package.isDisabled {
+                    warningBanner(
+                        title: "已禁用",
+                        reason: package.disableReason,
+                        date: package.disableDate,
+                        color: .red
+                    )
+                }
+                if package.isDeprecated {
+                    warningBanner(
+                        title: "已废弃",
+                        reason: package.deprecationReason,
+                        date: package.deprecationDate,
+                        color: .orange
+                    )
+                }
                 infoSection
+                if let caveats = package.caveats, !caveats.isEmpty {
+                    GroupBox("注意事项 (Caveats)") {
+                        Text(caveats)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(4)
+                    }
+                }
                 if hasRelations {
                     DependencyGraphView(
                         package: package,
@@ -63,6 +89,34 @@ struct PackageDetailView: View {
                         title: "被依赖列表（\(dependents.count)）",
                         items: dependents,
                         tint: .orange
+                    )
+                }
+                if !package.buildDependencies.isEmpty {
+                    chipSection(
+                        title: "构建依赖（\(package.buildDependencies.count)）",
+                        items: package.buildDependencies,
+                        tint: .indigo
+                    )
+                }
+                if !package.usesFromMacOS.isEmpty {
+                    chipSection(
+                        title: "使用 macOS 自带（\(package.usesFromMacOS.count)）",
+                        items: package.usesFromMacOS,
+                        tint: .teal
+                    )
+                }
+                if !package.caskDependsOn.isEmpty {
+                    chipSection(
+                        title: "依赖条件（\(package.caskDependsOn.count)）",
+                        items: package.caskDependsOn,
+                        tint: .blue
+                    )
+                }
+                if !package.conflictsWith.isEmpty {
+                    chipSection(
+                        title: "冲突软件包（\(package.conflictsWith.count)）",
+                        items: package.conflictsWith,
+                        tint: .red
                     )
                 }
             }
@@ -132,6 +186,35 @@ struct PackageDetailView: View {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             }
+        }
+    }
+
+    private func warningBanner(title: String, reason: String?, date: String?, color: Color) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(color)
+                if let reason, !reason.isEmpty {
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                if let date, !date.isEmpty {
+                    Text(date)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            Spacer()
+        }
+        .padding(10)
+        .background {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(color.opacity(0.08))
         }
     }
 
@@ -230,6 +313,9 @@ struct PackageDetailView: View {
                 } else if package.version == nil, let latest = package.latestVersion {
                     gridRow("版本", latest)
                 }
+                if package.installedVersions.count > 1 {
+                    gridRow("已装版本", package.installedVersions.joined(separator: ", "))
+                }
                 gridRow("状态", statusText)
                 if package.kind == .formula {
                     gridRow("安装方式", package.installedOnRequest ? "手动安装" : "作为依赖")
@@ -242,6 +328,28 @@ struct PackageDetailView: View {
                 }
                 if !dependents.isEmpty {
                     gridRow("被依赖", "\(dependents.count) 个已安装软件")
+                }
+                if let license = package.license, !license.isEmpty {
+                    gridRow("许可证", license)
+                }
+                if let tap = package.tap, !tap.isEmpty {
+                    gridRow("来源 Tap", tap)
+                }
+                if package.kegOnly {
+                    if let reason = package.kegOnlyReason, !reason.isEmpty {
+                        gridRow("Keg-only", reason)
+                    } else {
+                        gridRow("Keg-only", "是（不链接到 PATH）")
+                    }
+                }
+                if package.autoUpdates {
+                    gridRow("自动更新", "是")
+                }
+                if let sha = package.sha256, !sha.isEmpty {
+                    gridRow("SHA256", "\(sha.prefix(16))…")
+                }
+                if let url = package.sourceURL {
+                    gridRowLong("下载地址", url.absoluteString)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -332,6 +440,19 @@ struct PackageDetailView: View {
                 .gridColumnAlignment(.trailing)
             Text(value)
                 .textSelection(.enabled)
+        }
+    }
+
+    private func gridRowLong(_ label: String, _ value: String) -> some View {
+        GridRow {
+            Text(label)
+                .foregroundStyle(.secondary)
+                .gridColumnAlignment(.trailing)
+            Text(value)
+                .textSelection(.enabled)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(value)
         }
     }
 

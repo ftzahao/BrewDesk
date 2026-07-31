@@ -9,7 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var state: AppState
-    @State private var sidebarSelection: SidebarItem? = .installed
+    @State private var sidebarSelection: SidebarItem? = .home
 
     var body: some View {
         Group {
@@ -85,6 +85,12 @@ struct ContentView: View {
 
             List(selection: $sidebarSelection) {
                 Section {
+                    NavigationLink(destination: HomeView(state: state)) {
+                        sidebarLabel(.home)
+                    }
+                    .tag(SidebarItem.home as SidebarItem?)
+                    .listRowInsets(EdgeInsets(top: 1.5, leading: 10, bottom: 1.5, trailing: 10))
+                    .listRowSeparator(.hidden)
                     NavigationLink(destination: InstalledView(state: state)) {
                         sidebarLabel(.installed)
                     }
@@ -95,12 +101,6 @@ struct ContentView: View {
                         sidebarLabel(.outdated)
                     }
                     .tag(SidebarItem.outdated as SidebarItem?)
-                    .listRowInsets(EdgeInsets(top: 1.5, leading: 10, bottom: 1.5, trailing: 10))
-                    .listRowSeparator(.hidden)
-                    NavigationLink(destination: SearchView(state: state)) {
-                        sidebarLabel(.search)
-                    }
-                    .tag(SidebarItem.search as SidebarItem?)
                     .listRowInsets(EdgeInsets(top: 1.5, leading: 10, bottom: 1.5, trailing: 10))
                     .listRowSeparator(.hidden)
                 } header: {
@@ -144,7 +144,12 @@ struct ContentView: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
             .onChange(of: sidebarSelection) { _, newValue in
-                if let value = newValue { state.selectedSidebar = value }
+                if let value = newValue {
+                    state.selectedSidebar = value
+                    if value != .home {
+                        state.deactivateSearch()
+                    }
+                }
             }
             .onChange(of: state.selectedSidebar) { _, newValue in
                 sidebarSelection = newValue
@@ -200,9 +205,14 @@ struct ContentView: View {
     @ViewBuilder
     private func detail(for item: SidebarItem) -> some View {
         switch item {
+        case .home:
+            if state.isSearchActive {
+                SearchResultsView(state: state)
+            } else {
+                HomeView(state: state)
+            }
         case .installed: InstalledView(state: state)
         case .outdated: OutdatedView(state: state)
-        case .search: SearchView(state: state)
         case .taps: TapsView(state: state)
         case .services: ServicesView(state: state)
         case .maintenance: MaintenanceView(state: state)

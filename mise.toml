@@ -30,6 +30,10 @@ run = "./build.sh sign"
 description = "更新 appcast.xml 中的版本条目（基于 DMG 签名文件）"
 run = "./build.sh appcast"
 
+[tasks.bump]
+description = "从 VERSION 文件读取版本号并更新项目"
+run = "./build.sh bump"
+
 [tasks.release]
 description = "一键发布：构建 → DMG → 签名 → 更新 appcast.xml"
 run = "./build.sh release"

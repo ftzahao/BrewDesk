@@ -28,7 +28,7 @@ usage() {
   sign       sign_update 为 DMG 签名并输出 appcast 条目
   release    构建 → DMG → 签名 → 更新 appcast.xml → 打印摘要
   appcast    更新 appcast.xml 中的版本条目（基于 DMG 签名文件）
-  bump       更新 MARKETING_VERSION 和 CURRENT_PROJECT_VERSION
+  bump       从 VERSION 文件读取版本号并更新项目
   help       显示帮助信息
 EOF
 }
@@ -257,7 +257,18 @@ XML
 }
 
 do_bump_version() {
-    local new_version="${1:?用法: ./build.sh bump <version>}"
+    local version_file="VERSION"
+    if [ ! -f "$version_file" ]; then
+        echo "❌ 未找到 $version_file"
+        return 1
+    fi
+
+    local new_version
+    new_version=$(cat "$version_file" | tr -d '[:space:]')
+    if [ -z "$new_version" ]; then
+        echo "❌ $version_file 为空"
+        return 1
+    fi
 
     echo "==> 更新版本到 $new_version..."
 
@@ -270,8 +281,6 @@ do_bump_version() {
     fi
 
     echo "✅ 版本已更新为 $new_version"
-    echo "   MARKETING_VERSION = $new_version"
-    echo "   CURRENT_PROJECT_VERSION = $new_version"
 }
 
 do_release() {
@@ -324,7 +333,7 @@ case "${1:-build}" in
     dmg)     do_dmg ;;
     sign)    do_sign ;;
     appcast) do_appcast ;;
-    bump)    do_bump_version "${2:-}" ;;
+    bump)    do_bump_version ;;
     release) do_release ;;
     help)    usage ;;
     *)       echo "未知命令: $1"; usage; exit 1 ;;

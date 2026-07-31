@@ -9,6 +9,11 @@ DERIVED_DATA="build"
 APPCast="appcast.xml"
 SUFeedURL="https://raw.githubusercontent.com/ftzahao/BrewDesk/main/appcast.xml"
 
+# 从 Xcode 项目读取 MARKETING_VERSION
+get_version() {
+    grep 'MARKETING_VERSION' "$PROJECT"/project.pbxproj | grep -oE '[0-9]+\.[0-9]+([0-9.]+)?' | head -1
+}
+
 usage() {
     cat <<EOF
 用法: ./build.sh [命令]
@@ -23,6 +28,7 @@ usage() {
   sign       sign_update 为 DMG 签名并输出 appcast 条目
   release    构建 → DMG → 签名 → 更新 appcast.xml → 打印摘要
   appcast    更新 appcast.xml 中的版本条目（基于 DMG 签名文件）
+  bump       更新 MARKETING_VERSION 和 CURRENT_PROJECT_VERSION
   help       显示帮助信息
 EOF
 }
@@ -189,7 +195,6 @@ do_sign() {
 do_appcast() {
     local sig_file="$DERIVED_DATA/last_ed_signature.txt"
     local size_file="$DERIVED_DATA/last_dmg_size.txt"
-    local name_file="$DERIVED_DATA/last_dmg_name.txt"
 
     if [ ! -f "$sig_file" ] || [ ! -f "$size_file" ]; then
         echo "❌ 未找到签名信息，请先运行 ./build.sh sign"
@@ -198,38 +203,75 @@ do_appcast() {
 
     local ed_signature
     local file_size
-    local dmg_name
     ed_signature=$(cat "$sig_file")
     file_size=$(cat "$size_file")
-    dmg_name=$(cat "$name_file" 2>/dev/null || echo "BrewDesk.dmg")
 
-    if [ ! -f "$APPCast" ]; then
-        echo "❌ 未找到 $APPCast"
+    local version
+    version=$(get_version)
+    if [ -z "$version" ]; then
+        echo "❌ 无法从项目中读取 MARKETING_VERSION"
         return 1
     fi
 
-    echo "==> 更新 $APPCast..."
+    local pub_date
+    pub_date=$(date "+%a, %d %b %Y %H:%M:%S %z")
+    local download_url="https://github.com/ftzahao/BrewDesk/releases/download/${version}/BrewDesk.dmg"
 
-    # 从 Xcode 项目获取当前版本
-    local version
-    local build
-    version=$(grep -A1 'MARKETING_VERSION' "$PROJECT"/project.pbxproj | grep -oE '[0-9]+\.[0-9]+([0-9.]+)?' | head -1)
-    build=$(grep -A1 'CURRENT_PROJECT_VERSION' "$PROJECT"/project.pbxproj | grep -oE '[0-9]+' | head -1)
+    echo "==> 生成 $APPCast..."
 
-    # 用 sed 替换占位符（使用 | 作为定界符，避免 Base64 中的 / 冲突）
-    if [[ "$(uname)" == "Darwin" ]]; then
-        sed -i '' "s|PLACEHOLDER_ED_SIGNATURE|$ed_signature|g" "$APPCast"
-        sed -i '' "s|PLACEHOLDER_FILE_SIZE|$file_size|g" "$APPCast"
-    else
-        sed -i "s|PLACEHOLDER_ED_SIGNATURE|$ed_signature|g" "$APPCast"
-        sed -i "s|PLACEHOLDER_FILE_SIZE|$file_size|g" "$APPCast"
-    fi
+    cat > "$APPCast" <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"
+     xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
+     xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>BrewDesk</title>
+        <description>Homebrew 的原生 macOS 图形界面 — 自动更新</description>
+        <language>zh-Hans</language>
+        <link>https://github.com/ftzahao/BrewDesk</link>
+
+        <item>
+            <title>BrewDesk ${version}</title>
+            <pubDate>${pub_date}</pubDate>
+            <sparkle:channel>release</sparkle:channel>
+            <sparkle:version>${version}</sparkle:version>
+            <sparkle:shortVersionString>${version}</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.5</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="${download_url}" length="${file_size}" type="application/octet-stream" sparkle:edSignature="${ed_signature}" />
+            <description sparkle:format="markdown"><![CDATA[
+## ${version}
+
+更新内容请补充
+            ]]></description>
+        </item>
+    </channel>
+</rss>
+XML
 
     echo "✅ appcast.xml 已更新"
-    echo "   版本: $version ($build)"
-    echo "   DMG: $dmg_name"
+    echo "   版本: $version"
     echo "   edSignature: $ed_signature"
     echo "   length: $file_size"
+    echo "   download: $download_url"
+}
+
+do_bump_version() {
+    local new_version="${1:?用法: ./build.sh bump <version>}"
+
+    echo "==> 更新版本到 $new_version..."
+
+    if [[ "$(uname)" == "Darwin" ]]; then
+        sed -i '' "s/MARKETING_VERSION = [^;]*/MARKETING_VERSION = $new_version/" "$PROJECT"/project.pbxproj
+        sed -i '' "s/CURRENT_PROJECT_VERSION = [^;]*/CURRENT_PROJECT_VERSION = $new_version/" "$PROJECT"/project.pbxproj
+    else
+        sed -i "s/MARKETING_VERSION = [^;]*/MARKETING_VERSION = $new_version/" "$PROJECT"/project.pbxproj
+        sed -i "s/CURRENT_PROJECT_VERSION = [^;]*/CURRENT_PROJECT_VERSION = $new_version/" "$PROJECT"/project.pbxproj
+    fi
+
+    echo "✅ 版本已更新为 $new_version"
+    echo "   MARKETING_VERSION = $new_version"
+    echo "   CURRENT_PROJECT_VERSION = $new_version"
 }
 
 do_release() {
@@ -282,6 +324,7 @@ case "${1:-build}" in
     dmg)     do_dmg ;;
     sign)    do_sign ;;
     appcast) do_appcast ;;
+    bump)    do_bump_version "${2:-}" ;;
     release) do_release ;;
     help)    usage ;;
     *)       echo "未知命令: $1"; usage; exit 1 ;;

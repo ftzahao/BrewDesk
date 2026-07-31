@@ -492,7 +492,7 @@ private struct TapDetailView: View {
             isPinned: false, dependencies: [], installedOnRequest: true
         )
         return HStack(spacing: 10) {
-            CaskIconView(package: iconPackage, iconSize: 12, containerSize: 20, rounded: false)
+            CaskIconView(package: iconPackage, iconSize: 16, containerSize: 24, rounded: false)
 
             Button {
                 onTapPackage(name)

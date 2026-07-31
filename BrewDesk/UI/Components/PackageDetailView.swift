@@ -93,7 +93,7 @@ struct PackageDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 12) {
                 // Package type icon with rounded background
-                CaskIconView(package: package, iconSize: 22, containerSize: 36)
+                CaskIconView(package: package, iconSize: 30, containerSize: 44)
 
                 Text(package.name)
                     .font(.largeTitle.weight(.semibold))

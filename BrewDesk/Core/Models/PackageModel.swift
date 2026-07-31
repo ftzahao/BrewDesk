@@ -41,6 +41,12 @@ nonisolated struct Package: Identifiable, Hashable, Sendable {
     var analyticsInstallOnRequest90d: Int?
     var analyticsInstallOnRequest365d: Int?
 
+    /// cask 的权威应用信息（来自 `brew info --json` 的 artifacts 字段），
+    /// 用于精确查找已安装应用的图标，避免靠猜名字。
+    var caskArtifacts: [CaskArtifact] = []
+    /// cask 的展示名数组（来自 JSON 的 name 字段），用于匹配兜底。
+    var caskDisplayNames: [String] = []
+
     var versionLabel: String {
         if let version, let latestVersion, isOutdated {
             return "\(version) → \(latestVersion)"
@@ -55,4 +61,12 @@ nonisolated struct Package: Identifiable, Hashable, Sendable {
         fmt.timeStyle = .short
         return fmt.string(from: t)
     }
+}
+
+/// `brew info --json` 中某个 cask artifact 的应用信息。
+nonisolated struct CaskArtifact: Hashable, Sendable {
+    /// 应用包名，如 `["Downie 4.app"]`
+    let appNames: [String]
+    /// 安装目标路径，如 `/Applications/Downie 4.app`
+    let target: String?
 }

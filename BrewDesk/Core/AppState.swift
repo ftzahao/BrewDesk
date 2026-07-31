@@ -266,6 +266,9 @@ final class AppState: ObservableObject {
         defer { isLoadingInstalled = false }
         do {
             installed = try await client.installedPackages()
+            // 安装状态可能已变化，清空 cask 图标缓存
+            CaskIconCache.shared.invalidate()
+            enrichOutdatedWithInstalledInfo()
             lastError = nil
         } catch is CancellationError {} catch {
             lastError = error.localizedDescription
@@ -278,9 +281,32 @@ final class AppState: ObservableObject {
         defer { isLoadingOutdated = false }
         do {
             outdated = try await client.outdatedPackages()
+            enrichOutdatedWithInstalledInfo()
             lastError = nil
         } catch is CancellationError {} catch {
             lastError = error.localizedDescription
+        }
+    }
+
+    /// outdated 列表来自 `brew outdated --json`，不含 cask 的 artifacts 信息；
+    /// 用已安装列表中的权威 app 信息补全，保证“可更新”页也能显示真实图标。
+    private func enrichOutdatedWithInstalledInfo() {
+        guard !installed.isEmpty, !outdated.isEmpty else { return }
+
+        let installedByToken = Dictionary(
+            installed
+                .filter { $0.kind == .cask && (!$0.caskArtifacts.isEmpty || !$0.caskDisplayNames.isEmpty) }
+                .map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        guard !installedByToken.isEmpty else { return }
+
+        outdated = outdated.map { pkg in
+            guard let installedPkg = installedByToken[pkg.name] else { return pkg }
+            var copy = pkg
+            copy.caskArtifacts = installedPkg.caskArtifacts
+            copy.caskDisplayNames = installedPkg.caskDisplayNames
+            return copy
         }
     }
 

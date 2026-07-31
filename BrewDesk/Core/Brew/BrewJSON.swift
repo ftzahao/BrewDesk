@@ -75,10 +75,73 @@ nonisolated enum BrewJSON {
         let pinned: Bool?
         let installed: String?
         let installedTime: Int?
+        let artifacts: [Artifact]?
 
         enum CodingKeys: String, CodingKey {
-            case token, name, desc, homepage, version, outdated, pinned, installed
+            case token, name, desc, homepage, version, outdated, pinned, installed, artifacts
             case installedTime = "installed_time"
+        }
+
+        /// artifacts 中任意一项（app/pkg/zap 等），只关心其中的 app 信息。
+        /// 注意：`app` 数组可能是混合类型，例如
+        /// `["CleanMyMac_5.app", {"target": "CleanMyMac.app"}]`，
+        /// 直接按 [String] 解码会导致整个列表解析失败，这里做宽容解码。
+        struct Artifact: Decodable {
+            let app: [String]?
+            let target: String?
+
+            private enum CodingKeys: String, CodingKey {
+                case app, target
+            }
+
+            init(from decoder: Decoder) throws {
+                // 兼容非字典条目（老格式如 ["X.app", ["app"]]），直接忽略
+                guard let container = try? decoder.container(keyedBy: CodingKeys.self) else {
+                    app = nil
+                    target = nil
+                    return
+                }
+
+                target = (try? container.decodeIfPresent(String.self, forKey: .target)) ?? nil
+
+                if let raw = try? container.decode([AppValue].self, forKey: .app) {
+                    app = raw.compactMap(\.name)
+                } else if let single = try? container.decode(String.self, forKey: .app) {
+                    app = [single]
+                } else {
+                    app = nil
+                }
+            }
+
+            /// app 数组中的单个元素：可能是字符串，也可能是带 target 的字典
+            private enum AppValue: Decodable {
+                case string(String)
+                case target(String)
+                case other
+
+                init(from decoder: Decoder) throws {
+                    if let s = try? decoder.singleValueContainer().decode(String.self) {
+                        self = .string(s)
+                    } else if let nested = try? decoder.container(keyedBy: CodingKeys.self),
+                              let target = try? nested.decode(String.self, forKey: .target) {
+                        self = .target(target)
+                    } else {
+                        self = .other
+                    }
+                }
+
+                var name: String? {
+                    switch self {
+                    case .string(let s): s
+                    case .target(let t): t
+                    case .other: nil
+                    }
+                }
+
+                private enum CodingKeys: String, CodingKey {
+                    case target
+                }
+            }
         }
 
         func asPackage() -> Package {
@@ -95,7 +158,12 @@ nonisolated enum BrewJSON {
                 isPinned: pinned ?? false,
                 dependencies: [],
                 installedOnRequest: true,
-                installedTime: installTime
+                installedTime: installTime,
+                caskArtifacts: (artifacts ?? []).compactMap { artifact in
+                    guard let apps = artifact.app, !apps.isEmpty else { return nil }
+                    return CaskArtifact(appNames: apps, target: artifact.target)
+                },
+                caskDisplayNames: name ?? []
             )
         }
     }

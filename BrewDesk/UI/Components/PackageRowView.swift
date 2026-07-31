@@ -10,7 +10,7 @@ struct PackageRowView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            CaskIconView(package: package, iconSize: 16, containerSize: 26)
+            CaskIconView(package: package, iconSize: 20, containerSize: 28)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {

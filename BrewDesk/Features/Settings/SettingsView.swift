@@ -23,9 +23,8 @@ struct SettingsView: View {
     }
 
     private var appVersion: String {
-        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
-        return "\(short) (\(build))"
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"]  as? String ?? "?"
+        return "\(short)"
     }
 
     var body: some View {

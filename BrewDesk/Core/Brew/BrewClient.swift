@@ -171,10 +171,26 @@ actor BrewClient {
         var services = try ServicesJSON.decode(data)
         // Use `brew services info --json` for each service to get accurate `running` status,
         // since `brew services list --json` may report "stopped" for actually running services.
-        for i in services.indices {
-            if let info = try? await serviceInfo(name: services[i].name) {
-                services[i] = info
+        // 并行获取并限制并发进程数，避免逐个串行拉起 brew 子进程。
+        let count = services.count
+        let snapshot = services
+        var batchStart = 0
+        while batchStart < count {
+            let batchEnd = min(batchStart + Self.maxConcurrentBrewProcesses, count)
+            await withTaskGroup(of: (Int, BrewService?).self) { group in
+                for i in batchStart..<batchEnd {
+                    group.addTask { [self] in
+                        if let info = try? await self.serviceInfo(name: snapshot[i].name) {
+                            return (i, info)
+                        }
+                        return (i, nil)
+                    }
+                }
+                for await (index, info) in group {
+                    if let info { services[index] = info }
+                }
             }
+            batchStart = batchEnd
         }
         return services
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -222,31 +238,45 @@ actor BrewClient {
             }
         }
 
-        // Get trust status via tap-info for each tap
-        var taps: [BrewTap] = []
-        for entry in tapMap.values.sorted(by: { $0.name < $1.name }) {
-            let isOfficial = entry.name.hasPrefix("homebrew/")
-            let isTrusted = isOfficial // official taps are always trusted
-            var tap = BrewTap(
-                name: entry.name,
-                isOfficial: isOfficial,
-                isTrusted: isTrusted,
-                formulaCount: nil,
-                caskCount: nil,
-                isInstalled: entry.installed
-            )
-            // Try to get trust status from tap-info (may fail for sandbox reasons)
-            if let info = try? await tapInfo(name: entry.name) {
-                tap.formulaNames = info.formulaNames
-                tap.caskNames = info.caskNames
-                tap.formulaCount = info.formulaCount
-                tap.caskCount = info.caskCount
-                tap.isTrusted = info.isTrusted
+        // 获取每个 tap 的包列表与信任状态；并行执行并限制并发进程数。
+        let entries = tapMap.values.sorted(by: { $0.name < $1.name })
+        var tapResults: [BrewTap?] = Array(repeating: nil, count: entries.count)
+        var batchStart = 0
+        while batchStart < entries.count {
+            let batchEnd = min(batchStart + Self.maxConcurrentBrewProcesses, entries.count)
+            await withTaskGroup(of: (Int, BrewTap).self) { group in
+                for i in batchStart..<batchEnd {
+                    let entry = entries[i]
+                    group.addTask { [self] in
+                        let isOfficial = entry.name.hasPrefix("homebrew/")
+                        // official taps are always trusted
+                        var tap = BrewTap(
+                            name: entry.name,
+                            isOfficial: isOfficial,
+                            isTrusted: isOfficial,
+                            formulaCount: nil,
+                            caskCount: nil,
+                            isInstalled: entry.installed
+                        )
+                        // Try to get trust status from tap-info (may fail for sandbox reasons)
+                        if let info = try? await self.tapInfo(name: entry.name) {
+                            tap.formulaNames = info.formulaNames
+                            tap.caskNames = info.caskNames
+                            tap.formulaCount = info.formulaCount
+                            tap.caskCount = info.caskCount
+                            tap.isTrusted = info.isTrusted
+                        }
+                        return (i, tap)
+                    }
+                }
+                for await (index, tap) in group {
+                    tapResults[index] = tap
+                }
             }
-            taps.append(tap)
+            batchStart = batchEnd
         }
 
-        return taps
+        return tapResults.compactMap { $0 }
     }
 
     func addTap(_ name: String, onOutput: @escaping @Sendable (String) -> Void) async throws {
@@ -393,6 +423,9 @@ actor BrewClient {
     }
 
     // MARK: - Internals
+
+    /// 并行查询时最多同时运行的 brew 子进程数（防止瞬间拉起大量进程）
+    private static let maxConcurrentBrewProcesses = 6
 
     private func requireInstallation() throws -> BrewInstallation {
         if let installation {

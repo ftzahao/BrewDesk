@@ -183,12 +183,33 @@ final class AppState: ObservableObject {
     @Published var kindFilter: PackageKind? = nil
     @Published var showPinnedOnly: Bool = false
 
+    /// 主页目录过滤状态（提升到 AppState，便于集中做派生数据缓存）
+    @Published var homeKindFilter: PackageKind? = nil {
+        didSet { rebuildCatalogDerivedData() }
+    }
+    @Published var homeInstalledOnly: Bool = false {
+        didSet { rebuildCatalogDerivedData() }
+    }
+
+    /// 主页目录派生数据缓存：避免视图每帧对整个目录做全量过滤/统计
+    @Published private(set) var homeFilteredCatalog: [Package] = []
+    @Published private(set) var homeCatalogIndex: [Package.ID: Int] = [:]
+    @Published private(set) var homeIndexLetters: [String] = []
+    @Published private(set) var catalogInstalledCount = 0
+    @Published private(set) var catalogFormulaCount = 0
+    @Published private(set) var catalogCaskCount = 0
+
     @Published var brewfileCheckResult: String?
     @Published var brewfileCheckOK: Bool?
 
     private var statusClearTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
     private var didBootstrap = false
+    private var lastInstalledCaskTokens: Set<String>?
+
+    /// 主页详情缓存上限：防止浏览目录时无界累积完整信息（LRU 淘汰）
+    private static let maxCatalogDetailCacheSize = 200
+    private var catalogDetailOrder: [Package.ID] = []
 
     var filteredInstalled: [Package] {
         installed.filter { pkg in
@@ -226,9 +247,8 @@ final class AppState: ObservableObject {
             .sorted()
     }
 
-    var installedNameSet: Set<String> {
-        Set(installed.map(\.name))
-    }
+    /// 已安装包名集合（在 loadInstalled 时一次性构建，避免视图反复创建）
+    @Published private(set) var installedNameSet: Set<String> = []
 
     // MARK: - Lifecycle
 
@@ -246,7 +266,8 @@ final class AppState: ObservableObject {
             didBootstrap = false
             return
         }
-        await refreshAll()
+        // 启动只加载核心数据；Taps 等到首次进入页面时再懒加载
+        await refreshCore()
     }
 
     func redetectBrew() async {
@@ -268,14 +289,37 @@ final class AppState: ObservableObject {
         _ = await (a, b, c, d, e)
     }
 
+    /// 启动 / 首次进入所需的核心数据（不含 Taps，Taps 按需懒加载）
+    func refreshCore() async {
+        async let a: Void = loadInstalled()
+        async let b: Void = loadOutdated()
+        async let c: Void = loadServices()
+        async let d: Void = loadCatalog()
+        _ = await (a, b, c, d)
+    }
+
+    /// 安装/卸载/升级等变更后只需刷新受影响的数据，避免重载整个目录
+    func refreshLists() async {
+        async let a: Void = loadInstalled()
+        async let b: Void = loadOutdated()
+        async let c: Void = loadServices()
+        _ = await (a, b, c)
+    }
+
     func loadInstalled() async {
         guard installation != nil else { return }
         isLoadingInstalled = true
         defer { isLoadingInstalled = false }
         do {
             installed = try await client.installedPackages()
-            // 安装状态可能已变化，清空 cask 图标缓存
-            CaskIconCache.shared.invalidate()
+            installedNameSet = Set(installed.map(\.name))
+            // 安装状态可能已变化：仅当已安装 cask 集合真的变化时才清空图标缓存，
+            // 避免每次刷新都重新扫描磁盘。
+            let caskTokens = Set(installed.filter { $0.kind == .cask }.map(\.name))
+            if caskTokens != lastInstalledCaskTokens {
+                CaskIconCache.shared.invalidate()
+                lastInstalledCaskTokens = caskTokens
+            }
             enrichOutdatedWithInstalledInfo()
             enrichCatalogWithInstalledInfo()
             lastError = nil
@@ -356,6 +400,7 @@ final class AppState: ObservableObject {
                     return copy
                 }
             }
+            rebuildCatalogDerivedData()
             return
         }
         let installedByToken = Dictionary(
@@ -389,6 +434,7 @@ final class AppState: ObservableObject {
         if changed {
             catalog = newCatalog
         }
+        rebuildCatalogDerivedData()
     }
 
     /// 主页详情：优先缓存，未命中时拉取完整信息并缓存。
@@ -398,10 +444,8 @@ final class AppState: ObservableObject {
         }
         do {
             if let full = try await client.info(name: package.name, kind: package.kind) {
-                catalogDetailCache[full.id] = full
-                if let idx = catalog.firstIndex(where: { $0.id == full.id }) {
-                    catalog[idx] = full
-                }
+                storeCatalogDetail(full)
+                syncCatalogEntry(full)
                 return full
             }
         } catch is CancellationError {} catch {
@@ -609,7 +653,7 @@ final class AppState: ObservableObject {
         let title = packages.count == 1 ? "升级 \(names[0])" : "升级 \(packages.count) 个软件包"
         await runTask(kind: .upgrade, title: title) {
             try await self.client.upgrade(names: names) { _ in }
-            await self.refreshAll()
+            await self.refreshLists()
         }
     }
 
@@ -618,7 +662,7 @@ final class AppState: ObservableObject {
     func install(_ package: Package) async {
         await runTask(kind: .install, title: "安装 \(package.name)") {
             try await self.client.install(name: package.name, kind: package.kind) { _ in }
-            await self.refreshAll()
+            await self.refreshLists()
             if let updated = try? await self.client.info(name: package.name, kind: package.kind) {
                 self.patchSearchResult(updated)
             }
@@ -630,14 +674,14 @@ final class AppState: ObservableObject {
         await runTask(kind: .uninstall, title: title) {
             try await self.client.uninstall(name: package.name, kind: package.kind) { _ in }
             if self.selectedPackageID == package.id { self.selectedPackageID = nil }
-            await self.refreshAll()
+            await self.refreshLists()
         }
     }
 
     func pinPackage(_ package: Package) async {
         await runTask(kind: .pin, title: "固定 \(package.name)") {
             try await self.client.pin(name: package.name, kind: package.kind) { _ in }
-            await self.refreshAll()
+            await self.refreshLists()
             await self.refreshSelectedPackage(package)
         }
     }
@@ -645,7 +689,7 @@ final class AppState: ObservableObject {
     func unpinPackage(_ package: Package) async {
         await runTask(kind: .pin, title: "取消固定 \(package.name)") {
             try await self.client.unpin(name: package.name, kind: package.kind) { _ in }
-            await self.refreshAll()
+            await self.refreshLists()
             await self.refreshSelectedPackage(package)
         }
     }
@@ -715,7 +759,7 @@ final class AppState: ObservableObject {
     func importBrewfile(from fileURL: URL) async {
         await runTask(kind: .bundle, title: "安装 Brewfile") {
             try await self.client.installBrewfile(from: fileURL) { _ in }
-            await self.refreshAll()
+            await self.refreshLists()
         }
     }
 
@@ -798,16 +842,77 @@ final class AppState: ObservableObject {
         if let idx = searchResults.firstIndex(where: { $0.id == package.id }) {
             searchResults[idx] = package
         }
-        catalogDetailCache[package.id] = package
-        if let idx = catalog.firstIndex(where: { $0.id == package.id }) {
-            catalog[idx] = package
-        }
+        storeCatalogDetail(package)
+        syncCatalogEntry(package)
     }
 
     private func refreshSelectedPackage(_ package: Package) async {
         if let updated = try? await client.info(name: package.name, kind: package.kind) {
             patchSearchResult(updated)
             if selectedPackageID == package.id { selectedPackageID = updated.id }
+        }
+    }
+
+    // MARK: - 派生数据缓存
+
+    /// 目录级派生数据：统计 + 过滤结果 + 字母索引 + 选中索引。
+    /// 只在目录或过滤条件变化时重建，避免视图每帧全量遍历。
+    private func rebuildCatalogDerivedData() {
+        // 统计（基于完整目录，与历史语义一致）
+        var installedCount = 0
+        var formulaCount = 0
+        for pkg in catalog {
+            if pkg.kind == .formula { formulaCount += 1 }
+            if pkg.isInstalled { installedCount += 1 }
+        }
+        catalogInstalledCount = installedCount
+        catalogFormulaCount = formulaCount
+        catalogCaskCount = catalog.count - formulaCount
+
+        // 过滤 + 字母索引 + O(1) 选中查找
+        let base = homeKindFilter.map { kind in
+            catalog.filter { $0.kind == kind }
+        } ?? catalog
+        let filtered = homeInstalledOnly ? base.filter(\.isInstalled) : base
+        homeFilteredCatalog = filtered
+
+        var index: [Package.ID: Int] = [:]
+        index.reserveCapacity(filtered.count)
+        for (i, pkg) in filtered.enumerated() {
+            index[pkg.id] = i
+        }
+        homeCatalogIndex = index
+
+        var letters = Set<String>()
+        for pkg in filtered {
+            guard let first = pkg.name.first, first.isLetter else { continue }
+            letters.insert(String(first).lowercased())
+        }
+        homeIndexLetters = letters.sorted()
+    }
+
+    /// 写入完整详情缓存并做 LRU 淘汰，防止内存无界增长。
+    private func storeCatalogDetail(_ package: Package) {
+        if catalogDetailCache[package.id] != nil {
+            catalogDetailOrder.removeAll { $0 == package.id }
+        }
+        catalogDetailCache[package.id] = package
+        catalogDetailOrder.append(package.id)
+        while catalogDetailOrder.count > Self.maxCatalogDetailCacheSize {
+            let evicted = catalogDetailOrder.removeFirst()
+            catalogDetailCache[evicted] = nil
+        }
+    }
+
+    /// 同步更新完整目录与主页过滤缓存中的同一条目，
+    /// 保证详情视图拿到完整信息，且无需重建整个派生数据。
+    private func syncCatalogEntry(_ package: Package) {
+        if let idx = catalog.firstIndex(where: { $0.id == package.id }) {
+            catalog[idx] = package
+        }
+        if let homeIdx = homeCatalogIndex[package.id],
+           homeIdx < homeFilteredCatalog.count {
+            homeFilteredCatalog[homeIdx] = package
         }
     }
 }

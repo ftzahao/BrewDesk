@@ -114,8 +114,12 @@ struct CaskIconView: View {
 nonisolated final class CaskIconCache: @unchecked Sendable {
     static let shared = CaskIconCache()
 
+    /// 最多缓存的图标数量（FIFO 淘汰），防止浏览大量 cask 时内存无界增长
+    private static let maxIconCount = 512
+
     private let lock = NSLock()
     private var icons: [String: NSImage] = [:]
+    private var iconOrder: [String] = []
     private var paths: [String: String] = [:]
     private var misses: Set<String> = []
 
@@ -128,7 +132,14 @@ nonisolated final class CaskIconCache: @unchecked Sendable {
     func store(icon: NSImage, for token: String) {
         lock.lock()
         defer { lock.unlock() }
+        if icons[token] == nil {
+            iconOrder.append(token)
+        }
         icons[token] = icon
+        while iconOrder.count > Self.maxIconCount {
+            let evicted = iconOrder.removeFirst()
+            icons[evicted] = nil
+        }
     }
 
     /// 已解析且仍然存在的 .app 路径
@@ -164,6 +175,7 @@ nonisolated final class CaskIconCache: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         icons.removeAll()
+        iconOrder.removeAll()
         paths.removeAll()
         misses.removeAll()
     }

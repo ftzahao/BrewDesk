@@ -12,8 +12,10 @@ import Sparkle
 /// 管理 Sparkle 自动更新流程，作为 SwiftUI 的 ObservableObject 使用。
 final class UpdaterController: NSObject, ObservableObject {
     private(set) lazy var updaterController: SPUStandardUpdaterController = {
+        #if DEBUG
         // 启用 Sparkle 调试日志
         UserDefaults.standard.set(true, forKey: "SUEnableVerboseLogging")
+        #endif
         return SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: self,
@@ -30,20 +32,24 @@ final class UpdaterController: NSObject, ObservableObject {
         updaterController.updater.publisher(for: \.canCheckForUpdates)
             .assign(to: &$canCheckForUpdates)
 
-        // 打印当前版本信息
+        #if DEBUG
+        // 打印当前版本信息（仅 Debug 构建）
         let bundle = Bundle.main
         let shortVersion = bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         let buildVersion = bundle.infoDictionary?["CFBundleVersion"] as? String ?? "?"
         print("[Updater] App 版本: \(shortVersion) (\(buildVersion))")
         print("[Updater] Feed URL: \(feedURLString(for: updaterController.updater) ?? "nil")")
+        #endif
     }
 
     /// 手动检查更新
     func checkForUpdates() {
+        #if DEBUG
         let bundle = Bundle.main
         let shortVersion = bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         let buildVersion = bundle.infoDictionary?["CFBundleVersion"] as? String ?? "?"
         print("[Updater] 手动检查更新 — 本地版本: \(shortVersion) (\(buildVersion))")
+        #endif
         updaterController.checkForUpdates(nil)
     }
 
@@ -65,21 +71,27 @@ extension UpdaterController: SPUUpdaterDelegate {
     }
 
     func updater(_ updater: SPUUpdater, didFinishLoading appcast: SUAppcast) {
+        #if DEBUG
         print("[Updater] Appcast 加载成功，共 \(appcast.items.count) 个条目")
         for item in appcast.items {
             print(
                 "  - 版本: \(item.versionString) (\(item.displayVersionString))"
             )
         }
+        #endif
     }
 
     func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+        #if DEBUG
         print("[Updater] 未找到更新 ❌")
+        #endif
     }
 
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        #if DEBUG
         print(
             "[Updater] 找到更新 ✅ — \(item.displayVersionString) (\(item.versionString))"
         )
+        #endif
     }
 }

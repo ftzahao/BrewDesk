@@ -2,7 +2,7 @@
 //  HomeStatsRow.swift
 //  BrewDesk
 //
-//  主页概览统计卡片：已安装 / 可更新 / Formula / Cask / 服务运行中。
+//  主页概览统计卡片：已安装 / 可更新 / 服务运行中（均为跳转入口）。
 //
 
 import SwiftUI
@@ -11,7 +11,7 @@ struct HomeStatsRow: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             StatCard(
                 icon: "shippingbox.fill",
                 tint: .blue,
@@ -28,22 +28,6 @@ struct HomeStatsRow: View {
                 action: { state.selectedSidebar = .outdated }
             )
             StatCard(
-                icon: "terminal.fill",
-                tint: .green,
-                title: "Formula",
-                value: state.catalogFormulaCount,
-                active: state.homeKindFilter == .formula,
-                action: toggleFilter(.formula)
-            )
-            StatCard(
-                icon: "app.badge.fill",
-                tint: .purple,
-                title: "Cask",
-                value: state.catalogCaskCount,
-                active: state.homeKindFilter == .cask,
-                action: toggleFilter(.cask)
-            )
-            StatCard(
                 icon: "bolt.horizontal.circle.fill",
                 tint: .red,
                 title: "服务运行中",
@@ -53,15 +37,9 @@ struct HomeStatsRow: View {
             )
         }
     }
-
-    private func toggleFilter(_ kind: PackageKind) -> () -> Void {
-        {
-            state.homeKindFilter = (state.homeKindFilter == kind) ? nil : kind
-        }
-    }
 }
 
-/// 单个统计卡片：图标 + 数值 + 标题，支持高亮与筛选态标记。
+/// 单个统计卡片：图标 + 数值 + 标题。
 private struct StatCard: View {
     let icon: String
     let tint: Color
@@ -69,7 +47,6 @@ private struct StatCard: View {
     let value: Int
     var total: Int? = nil
     var highlighted: Bool = false
-    var active: Bool = false
     let action: () -> Void
 
     @State private var isHovered = false
@@ -82,21 +59,20 @@ private struct StatCard: View {
     }
 
     var body: some View {
-        let effectiveTint = active ? Color.accentColor : tint
-        return Button(action: action) {
-            HStack(spacing: 10) {
+        Button(action: action) {
+            HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(effectiveTint.opacity(active ? 0.18 : 0.13))
-                        .frame(width: 34, height: 34)
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(tint.opacity(0.14))
+                        .frame(width: 36, height: 36)
                     Image(systemName: icon)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(effectiveTint)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(tint)
                 }
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(valueText)
-                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .contentTransition(.numericText())
                     Text(title)
@@ -105,41 +81,23 @@ private struct StatCard: View {
                 }
 
                 Spacer(minLength: 0)
-
-                if active {
-                    Text("筛选中")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.accentColor.opacity(0.12)))
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+            .glassEffect(
+                .regular.interactive(),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .overlay {
+                if highlighted {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.orange.opacity(0.35), lineWidth: 1.2)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(.thinMaterial)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(
-                        highlighted
-                            ? Color.orange.opacity(0.35)
-                            : (active ? Color.accentColor.opacity(0.45) : Color.primary.opacity(0.06)),
-                        lineWidth: highlighted || active ? 1.2 : 1
-                    )
-            }
-            .scaleEffect(isHovered ? 1.018 : 1)
-            .shadow(color: .black.opacity(isHovered ? 0.08 : 0), radius: 5, y: 2)
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .scaleEffect(isHovered ? 1.015 : 1)
         }
         .buttonStyle(.plain)
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onHover { hovering in
             isHovered = hovering
         }

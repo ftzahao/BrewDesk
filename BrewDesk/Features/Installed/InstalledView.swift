@@ -47,6 +47,9 @@ struct InstalledView: View {
             dependents: { state.dependents(of: $0) },
             onConfirm: { pkg in Task { await state.uninstall(pkg) } }
         )
+        .task {
+            await state.loadInstalled()
+        }
     }
 
     private var listColumn: some View {

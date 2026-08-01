@@ -206,6 +206,19 @@ final class AppState: ObservableObject {
     private var searchTask: Task<Void, Never>?
     private var didBootstrap = false
     private var lastInstalledCaskTokens: Set<String>?
+    /// 各数据集在途加载任务：合并并发请求，避免重复拉起 brew 子进程。
+    private var installedLoadTask: Task<Void, Never>?
+    private var installedLoadToken: UUID?
+    private var outdatedLoadTask: Task<Void, Never>?
+    private var outdatedLoadToken: UUID?
+    private var catalogLoadTask: Task<Void, Never>?
+    private var catalogLoadToken: UUID?
+    private var servicesLoadTask: Task<Void, Never>?
+    private var servicesLoadToken: UUID?
+    private var tapsLoadTask: Task<Void, Never>?
+    private var tapsLoadToken: UUID?
+    private var cleanupPreviewLoadTask: Task<Void, Never>?
+    private var cleanupPreviewLoadToken: UUID?
 
     /// 主页详情缓存上限：防止浏览目录时无界累积完整信息（LRU 淘汰）
     private static let maxCatalogDetailCacheSize = 200
@@ -281,6 +294,7 @@ final class AppState: ObservableObject {
     // MARK: - Load
 
     func refreshAll() async {
+        cancelPendingLoads()
         async let a: Void = loadInstalled()
         async let b: Void = loadOutdated()
         async let c: Void = loadServices()
@@ -300,6 +314,7 @@ final class AppState: ObservableObject {
 
     /// 安装/卸载/升级等变更后只需刷新受影响的数据，避免重载整个目录
     func refreshLists() async {
+        cancelPendingLoads()
         async let a: Void = loadInstalled()
         async let b: Void = loadOutdated()
         async let c: Void = loadServices()
@@ -308,6 +323,19 @@ final class AppState: ObservableObject {
 
     func loadInstalled() async {
         guard installation != nil else { return }
+        if let running = installedLoadTask {
+            await running.value
+            return
+        }
+        let token = UUID()
+        installedLoadToken = token
+        let task = Task { await self.performLoadInstalled() }
+        installedLoadTask = task
+        await task.value
+        if installedLoadToken == token { installedLoadTask = nil }
+    }
+
+    private func performLoadInstalled() async {
         isLoadingInstalled = true
         defer { isLoadingInstalled = false }
         do {
@@ -330,6 +358,19 @@ final class AppState: ObservableObject {
 
     func loadOutdated() async {
         guard installation != nil else { return }
+        if let running = outdatedLoadTask {
+            await running.value
+            return
+        }
+        let token = UUID()
+        outdatedLoadToken = token
+        let task = Task { await self.performLoadOutdated() }
+        outdatedLoadTask = task
+        await task.value
+        if outdatedLoadToken == token { outdatedLoadTask = nil }
+    }
+
+    private func performLoadOutdated() async {
         isLoadingOutdated = true
         defer { isLoadingOutdated = false }
         do {
@@ -345,6 +386,19 @@ final class AppState: ObservableObject {
     /// 加载全部可安装包目录（名称 + 类型），毫秒级完成。
     func loadCatalog() async {
         guard installation != nil else { return }
+        if let running = catalogLoadTask {
+            await running.value
+            return
+        }
+        let token = UUID()
+        catalogLoadToken = token
+        let task = Task { await self.performLoadCatalog() }
+        catalogLoadTask = task
+        await task.value
+        if catalogLoadToken == token { catalogLoadTask = nil }
+    }
+
+    private func performLoadCatalog() async {
         isLoadingCatalog = true
         defer { isLoadingCatalog = false }
         do {
@@ -478,6 +532,19 @@ final class AppState: ObservableObject {
 
     func loadServices() async {
         guard installation != nil else { return }
+        if let running = servicesLoadTask {
+            await running.value
+            return
+        }
+        let token = UUID()
+        servicesLoadToken = token
+        let task = Task { await self.performLoadServices() }
+        servicesLoadTask = task
+        await task.value
+        if servicesLoadToken == token { servicesLoadTask = nil }
+    }
+
+    private func performLoadServices() async {
         isLoadingServices = true
         defer { isLoadingServices = false }
         do {
@@ -490,6 +557,19 @@ final class AppState: ObservableObject {
 
     func loadTaps() async {
         guard installation != nil else { return }
+        if let running = tapsLoadTask {
+            await running.value
+            return
+        }
+        let token = UUID()
+        tapsLoadToken = token
+        let task = Task { await self.performLoadTaps() }
+        tapsLoadTask = task
+        await task.value
+        if tapsLoadToken == token { tapsLoadTask = nil }
+    }
+
+    private func performLoadTaps() async {
         isLoadingTaps = true
         defer { isLoadingTaps = false }
         do {
@@ -589,7 +669,7 @@ final class AppState: ObservableObject {
         searchQuery = query
         isSearchActive = true
         selectedSidebar = .home
-        Task { await runSearch() }
+        searchTask = Task { await runSearch() }
     }
 
     /// 退出搜索结果视图，返回主页。
@@ -628,6 +708,19 @@ final class AppState: ObservableObject {
 
     func loadCleanupPreview() async {
         guard installation != nil else { return }
+        if let running = cleanupPreviewLoadTask {
+            await running.value
+            return
+        }
+        let token = UUID()
+        cleanupPreviewLoadToken = token
+        let task = Task { await self.performLoadCleanupPreview() }
+        cleanupPreviewLoadTask = task
+        await task.value
+        if cleanupPreviewLoadToken == token { cleanupPreviewLoadTask = nil }
+    }
+
+    private func performLoadCleanupPreview() async {
         isLoadingCleanupPreview = true
         defer { isLoadingCleanupPreview = false }
         do {
@@ -821,6 +914,28 @@ final class AppState: ObservableObject {
             notifyIfNeeded(title: "BrewDesk 失败", body: title, success: false)
         }
         _ = kind
+    }
+
+    /// 取消并清空所有在途加载任务（刷新前调用，避免旧任务把过期数据写回）。
+    private func cancelPendingLoads() {
+        installedLoadTask?.cancel()
+        installedLoadTask = nil
+        installedLoadToken = nil
+        outdatedLoadTask?.cancel()
+        outdatedLoadTask = nil
+        outdatedLoadToken = nil
+        catalogLoadTask?.cancel()
+        catalogLoadTask = nil
+        catalogLoadToken = nil
+        servicesLoadTask?.cancel()
+        servicesLoadTask = nil
+        servicesLoadToken = nil
+        tapsLoadTask?.cancel()
+        tapsLoadTask = nil
+        tapsLoadToken = nil
+        cleanupPreviewLoadTask?.cancel()
+        cleanupPreviewLoadTask = nil
+        cleanupPreviewLoadToken = nil
     }
 
     private func showStatus(_ message: String) {

@@ -34,7 +34,7 @@ struct HomeView: View {
                 HomeDetailPane(state: state, onUninstall: { pendingUninstall = $0 })
             }
         }
-        .navigationTitle("主页")
+        .navigationSubtitle("Homebrew 管理工具")
         .onExitCommand(perform: handleEscape)
         .overlay(alignment: .topLeading) {
             // 全局 ⌘F：聚焦工具栏搜索框
@@ -55,6 +55,11 @@ struct HomeView: View {
             dependents: { state.dependents(of: $0) },
             onConfirm: { pkg in Task { await state.uninstall(pkg) } }
         )
+        .task {
+            if state.catalog.isEmpty {
+                await state.loadCatalog()
+            }
+        }
     }
 
     private var refreshButton: some View {

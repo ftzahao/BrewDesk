@@ -514,75 +514,100 @@ actor BrewClient {
         var data = Data()
     }
 
+    /// 任务取消时用于终止子进程的线程安全容器。
+    private final class ProcessHolder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var process: Process?
+
+        func set(_ process: Process) {
+            lock.lock()
+            defer { lock.unlock() }
+            self.process = process
+        }
+
+        func terminate() {
+            lock.lock()
+            defer { lock.unlock() }
+            process?.terminate()
+            process = nil
+        }
+    }
+
     private func runRead(
         install: BrewInstallation,
         arguments: [String],
         allowNonZero: Bool
     ) async throws -> BrewCommandResult {
         let id = UUID()
+        let holder = ProcessHolder()
 
-        return try await withCheckedThrowingContinuation { continuation in
-            let process = Process()
-            process.executableURL = install.executableURL
-            process.arguments = arguments
-            process.environment = BrewLocator.brewEnvironment(executable: install.executableURL)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let process = Process()
+                holder.set(process)
+                process.executableURL = install.executableURL
+                process.arguments = arguments
+                process.environment = BrewLocator.brewEnvironment(executable: install.executableURL)
 
-            let out = Pipe()
-            let err = Pipe()
-            process.standardOutput = out
-            process.standardError = err
+                let out = Pipe()
+                let err = Pipe()
+                process.standardOutput = out
+                process.standardError = err
 
-            readProcesses[id] = process
+                readProcesses[id] = process
 
-            // Read pipe data in background threads to prevent the child process
-            // from blocking when output exceeds the pipe buffer size (64KB on macOS).
-            let outHandle = out.fileHandleForReading
-            let errHandle = err.fileHandleForReading
-            let readGroup = DispatchGroup()
-            let stdoutBuf = PipeBuffer()
-            let stderrBuf = PipeBuffer()
+                // Read pipe data in background threads to prevent the child process
+                // from blocking when output exceeds the pipe buffer size (64KB on macOS).
+                let outHandle = out.fileHandleForReading
+                let errHandle = err.fileHandleForReading
+                let readGroup = DispatchGroup()
+                let stdoutBuf = PipeBuffer()
+                let stderrBuf = PipeBuffer()
 
-            readGroup.enter()
-            DispatchQueue.global().async {
-                stdoutBuf.data = outHandle.readDataToEndOfFile()
-                readGroup.leave()
-            }
-
-            readGroup.enter()
-            DispatchQueue.global().async {
-                stderrBuf.data = errHandle.readDataToEndOfFile()
-                readGroup.leave()
-            }
-
-            process.terminationHandler = { [weak self] proc in
-                readGroup.wait()
-
-                let stdout = String(data: stdoutBuf.data, encoding: .utf8) ?? ""
-                let stderr = String(data: stderrBuf.data, encoding: .utf8) ?? ""
-
-                Task {
-                    await self?.clearReadProcess(id)
+                readGroup.enter()
+                DispatchQueue.global().async {
+                    stdoutBuf.data = outHandle.readDataToEndOfFile()
+                    readGroup.leave()
                 }
 
-                if proc.terminationReason == .uncaughtSignal {
-                    continuation.resume(throwing: BrewError.cancelled)
-                    return
+                readGroup.enter()
+                DispatchQueue.global().async {
+                    stderrBuf.data = errHandle.readDataToEndOfFile()
+                    readGroup.leave()
                 }
 
-                _ = allowNonZero
-                continuation.resume(returning: BrewCommandResult(
-                    exitCode: proc.terminationStatus,
-                    stdout: stdout,
-                    stderr: stderr
-                ))
-            }
+                process.terminationHandler = { [weak self] proc in
+                    readGroup.wait()
 
-            do {
-                try process.run()
-            } catch {
-                readProcesses[id] = nil
-                continuation.resume(throwing: error)
+                    let stdout = String(data: stdoutBuf.data, encoding: .utf8) ?? ""
+                    let stderr = String(data: stderrBuf.data, encoding: .utf8) ?? ""
+
+                    Task {
+                        await self?.clearReadProcess(id)
+                    }
+
+                    if proc.terminationReason == .uncaughtSignal {
+                        continuation.resume(throwing: BrewError.cancelled)
+                        return
+                    }
+
+                    _ = allowNonZero
+                    continuation.resume(returning: BrewCommandResult(
+                        exitCode: proc.terminationStatus,
+                        stdout: stdout,
+                        stderr: stderr
+                    ))
+                }
+
+                do {
+                    try process.run()
+                } catch {
+                    readProcesses[id] = nil
+                    continuation.resume(throwing: error)
+                }
             }
+        } onCancel: {
+            holder.terminate()
         }
     }
 
@@ -592,74 +617,81 @@ actor BrewClient {
             throw BrewError.busy
         }
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            let process = Process()
-            process.executableURL = install.executableURL
-            process.arguments = arguments
-            process.environment = BrewLocator.brewEnvironment(executable: install.executableURL)
+        let holder = ProcessHolder()
 
-            let out = Pipe()
-            let err = Pipe()
-            process.standardOutput = out
-            process.standardError = err
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                let process = Process()
+                holder.set(process)
+                process.executableURL = install.executableURL
+                process.arguments = arguments
+                process.environment = BrewLocator.brewEnvironment(executable: install.executableURL)
 
-            writeProcess = process
+                let out = Pipe()
+                let err = Pipe()
+                process.standardOutput = out
+                process.standardError = err
 
-            let handleOutput: @Sendable (FileHandle) -> Void = { handle in
-                let data = handle.availableData
-                guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
-                onOutput(text)
-            }
+                writeProcess = process
 
-            out.fileHandleForReading.readabilityHandler = handleOutput
-            err.fileHandleForReading.readabilityHandler = handleOutput
-
-            process.terminationHandler = { [weak self] proc in
-                out.fileHandleForReading.readabilityHandler = nil
-                err.fileHandleForReading.readabilityHandler = nil
-
-                let restOut = out.fileHandleForReading.readDataToEndOfFile()
-                if !restOut.isEmpty, let text = String(data: restOut, encoding: .utf8) {
-                    onOutput(text)
-                }
-                let restErr = err.fileHandleForReading.readDataToEndOfFile()
-                if !restErr.isEmpty, let text = String(data: restErr, encoding: .utf8) {
+                let handleOutput: @Sendable (FileHandle) -> Void = { handle in
+                    let data = handle.availableData
+                    guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
                     onOutput(text)
                 }
 
-                Task {
-                    await self?.clearWriteProcess()
-                }
+                out.fileHandleForReading.readabilityHandler = handleOutput
+                err.fileHandleForReading.readabilityHandler = handleOutput
 
-                if proc.terminationReason == .uncaughtSignal {
-                    continuation.resume(throwing: BrewError.cancelled)
-                    return
-                }
+                process.terminationHandler = { [weak self] proc in
+                    out.fileHandleForReading.readabilityHandler = nil
+                    err.fileHandleForReading.readabilityHandler = nil
 
-                if proc.terminationStatus != 0 {
-                    let command = (["brew"] + arguments).joined(separator: " ")
-                    continuation.resume(
-                        throwing: BrewError.nonZeroExit(
-                            command: command,
-                            code: proc.terminationStatus,
-                            stderr: "见上方日志"
+                    let restOut = out.fileHandleForReading.readDataToEndOfFile()
+                    if !restOut.isEmpty, let text = String(data: restOut, encoding: .utf8) {
+                        onOutput(text)
+                    }
+                    let restErr = err.fileHandleForReading.readDataToEndOfFile()
+                    if !restErr.isEmpty, let text = String(data: restErr, encoding: .utf8) {
+                        onOutput(text)
+                    }
+
+                    Task {
+                        await self?.clearWriteProcess()
+                    }
+
+                    if proc.terminationReason == .uncaughtSignal {
+                        continuation.resume(throwing: BrewError.cancelled)
+                        return
+                    }
+
+                    if proc.terminationStatus != 0 {
+                        let command = (["brew"] + arguments).joined(separator: " ")
+                        continuation.resume(
+                            throwing: BrewError.nonZeroExit(
+                                command: command,
+                                code: proc.terminationStatus,
+                                stderr: "见上方日志"
+                            )
                         )
-                    )
-                    return
+                        return
+                    }
+
+                    continuation.resume()
                 }
 
-                continuation.resume()
+                do {
+                    onOutput("$ brew \(arguments.joined(separator: " "))\n")
+                    try process.run()
+                } catch {
+                    writeProcess = nil
+                    out.fileHandleForReading.readabilityHandler = nil
+                    err.fileHandleForReading.readabilityHandler = nil
+                    continuation.resume(throwing: error)
+                }
             }
-
-            do {
-                onOutput("$ brew \(arguments.joined(separator: " "))\n")
-                try process.run()
-            } catch {
-                writeProcess = nil
-                out.fileHandleForReading.readabilityHandler = nil
-                err.fileHandleForReading.readabilityHandler = nil
-                continuation.resume(throwing: error)
-            }
+        } onCancel: {
+            holder.terminate()
         }
     }
 

@@ -2,7 +2,7 @@
 //  HomeCatalogList.swift
 //  BrewDesk
 //
-//  主页目录列表：分类筛选 + 窗口化渲染 + A-Z 索引 + 空状态。
+//  主页目录列表：分类筛选 + List 懒加载（按需实例化可见行）+ A-Z 索引 + 空状态。
 //
 
 import SwiftUI
@@ -12,22 +12,7 @@ struct HomeCatalogList: View {
     @FocusState.Binding var searchFocused: Bool
     let onUninstall: (Package) -> Void
 
-    private static let pageSize = 500
-
     @State private var localSelection: Package.ID?
-    @State private var listStart = 0
-    @State private var visibleCount = 500
-
-    // MARK: - 派生数据
-
-    /// 窗口化渲染：始终只展示目录中的一段，保证 List 与无障碍树保持轻量。
-    private var displayedPackages: [Package] {
-        let filtered = state.homeFilteredCatalog
-        guard !filtered.isEmpty else { return [] }
-        let start = min(max(listStart, 0), filtered.count - 1)
-        let end = min(start + visibleCount, filtered.count)
-        return Array(filtered[start..<end])
-    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -43,7 +28,7 @@ struct HomeCatalogList: View {
                         }
                     }
                 )) {
-                    ForEach(displayedPackages) { pkg in
+                    ForEach(state.homeFilteredCatalog) { pkg in
                         PackageRowView(
                             package: pkg,
                             showKindBadge: false,
@@ -52,15 +37,6 @@ struct HomeCatalogList: View {
                         )
                             .tag(Optional(pkg.id))
                             .id(pkg.id)
-                            .onAppear {
-                                // 滚动接近窗口底部时向下追加一批
-                                if pkg.id == displayedPackages.last?.id {
-                                    visibleCount = min(
-                                        visibleCount + Self.pageSize,
-                                        state.homeFilteredCatalog.count - listStart
-                                    )
-                                }
-                            }
                             .contextMenu {
                                 if pkg.isInstalled {
                                     if pkg.isOutdated {
@@ -76,20 +52,10 @@ struct HomeCatalogList: View {
                     }
                 }
                 .onChange(of: state.homeKindFilter) { _, _ in
-                    resetList(proxy: proxy)
+                    scrollToFirst(proxy: proxy)
                 }
                 .onChange(of: state.homeInstalledOnly) { _, _ in
-                    resetList(proxy: proxy)
-                }
-                .onChange(of: state.homeFilteredCatalog.count) { _, _ in
-                    let count = state.homeFilteredCatalog.count
-                    if count == 0 {
-                        listStart = 0
-                    } else if listStart >= count {
-                        // 目录刷新后窗口起点越界时复位到尾部，避免空白
-                        listStart = max(0, count - 1)
-                    }
-                    visibleCount = min(visibleCount, max(count - listStart, 1))
+                    scrollToFirst(proxy: proxy)
                 }
                 .onReceive(state.$selectedPackageID) { id in
                     if localSelection != id {
@@ -142,9 +108,7 @@ struct HomeCatalogList: View {
         .padding(8)
     }
 
-    private func resetList(proxy: ScrollViewProxy) {
-        listStart = 0
-        visibleCount = Self.pageSize
+    private func scrollToFirst(proxy: ScrollViewProxy) {
         DispatchQueue.main.async {
             if let first = state.homeFilteredCatalog.first {
                 proxy.scrollTo(first.id, anchor: .top)
@@ -157,10 +121,6 @@ struct HomeCatalogList: View {
             $0.name.lowercased().hasPrefix(letter)
         }) else { return }
         let targetID = state.homeFilteredCatalog[idx].id
-
-        // 把窗口直接移到目标字母附近（目标行必在渲染范围内），再滚动定位
-        listStart = max(0, idx - Self.pageSize / 5)
-        visibleCount = Self.pageSize
         DispatchQueue.main.async {
             withAnimation(.easeOut(duration: 0.2)) {
                 proxy.scrollTo(targetID, anchor: .top)
@@ -191,8 +151,6 @@ struct HomeCatalogList: View {
                 Button("清除筛选") {
                     state.homeKindFilter = nil
                     state.homeInstalledOnly = false
-                    listStart = 0
-                    visibleCount = Self.pageSize
                 }
             }
         }
@@ -200,7 +158,7 @@ struct HomeCatalogList: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            Text("已显示 \(displayedPackages.count) / 共 \(state.homeFilteredCatalog.count) 项")
+            Text("共 \(state.homeFilteredCatalog.count) 项")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()

@@ -22,6 +22,9 @@ struct OutdatedView: View {
         .onChange(of: selection) { _, newValue in
             state.setSelectedPackageID(newValue.first)
         }
+        .task {
+            await state.loadOutdated()
+        }
     }
 
     private var listColumn: some View {

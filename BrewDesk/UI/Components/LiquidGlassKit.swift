@@ -81,9 +81,14 @@ struct TaskStatusBar: View {
                 .font(.callout.weight(.medium))
                 .lineLimit(1)
                 .monospacedDigit()
+                // 标题限宽：长任务名在限定区域内以 "…" 截断，
+                // 确保「取消」按钮始终有空间、不被标题挤出胶囊。
+                .frame(maxWidth: 340, alignment: .leading)
             Button("取消", action: onCancel)
                 .buttonStyle(.glassCapsule)
                 .controlSize(.small)
+                .layoutPriority(1)
+                .fixedSize()
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)

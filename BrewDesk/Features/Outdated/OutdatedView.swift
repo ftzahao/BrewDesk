@@ -33,7 +33,15 @@ struct OutdatedView: View {
     }
 
     private var listColumn: some View {
-        List(selection: $selection) {
+        List(selection: Binding<Set<Package.ID>>(
+            get: {
+                // getter 先剔除已不在列表中的 ID（如升级完成的包），
+                // 避免 List 持有无效选中项在滚动目标回映时触发断言崩溃。
+                let valid = Set(packages.map(\.id))
+                return selection.intersection(valid)
+            },
+            set: { selection = $0 }
+        )) {
             ForEach(packages) { pkg in
                 PackageRowView(package: pkg)
                     .tag(pkg.id)
@@ -44,9 +52,16 @@ struct OutdatedView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        // 行数据变化时整体重建列表，销毁缓存的滚动目标（见 InstalledView 注释）。
+        .id(packages)
         .overlay {
             if state.isLoadingOutdated && packages.isEmpty {
-                ProgressView("检查更新…")
+                VStack(spacing: 12) {
+                    ProgressView("检查更新…")
+                    Button("取消") { state.cancelOutdatedLoading() }
+                        .buttonStyle(.glassCapsule)
+                        .controlSize(.small)
+                }
             } else if packages.isEmpty {
                 ContentUnavailableView {
                     Label("全部是最新的", systemImage: "checkmark.seal.fill")
@@ -57,17 +72,29 @@ struct OutdatedView: View {
         }
         .toolbar {
             ToolbarItemGroup {
-                Button("更新 Homebrew") { Task { await state.brewUpdate() } }
-                    .disabled(state.isTaskRunning)
-                Button("升级所选") { Task { await state.upgrade(packages: selectedPackages) } }
-                    .disabled(selectedPackages.isEmpty || state.isTaskRunning)
-                Button("全部升级") { Task { await state.upgradeAll() } }
-                    .disabled(packages.isEmpty || state.isTaskRunning)
-                    .keyboardShortcut("u", modifiers: [.command, .shift])
+                Button { Task { await state.brewUpdate() } } label: {
+                    Label(
+                        "更新 Homebrew",
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
+                    .help("更新 Homebrew")
+                }
+                .disabled(state.isTaskRunning)
+                Button { Task { await state.upgrade(packages: selectedPackages) } } label: {
+                    Label("升级所选", systemImage: "arrow.up.circle")
+                        .help("升级所选")
+                }
+                .disabled(selectedPackages.isEmpty || state.isTaskRunning)
+                Button { Task { await state.upgradeAll() } } label: {
+                    Label("全部升级", systemImage: "arrow.up.circle.fill")
+                        .help("全部升级")
+                }
+                .disabled(packages.isEmpty || state.isTaskRunning)
+                .keyboardShortcut("u", modifiers: [.command, .shift])
             }
             ToolbarItem {
                 Button { Task { await state.loadOutdated() } } label: {
-                    Label("刷新", systemImage: "arrow.clockwise")
+                    Label("刷新", systemImage: "arrow.clockwise").help("刷新")
                 }.disabled(state.isLoadingOutdated || state.isTaskRunning)
             }
         }

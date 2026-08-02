@@ -50,8 +50,39 @@ actor BrewClient {
 
     func outdatedPackages() async throws -> [Package] {
         let data = try await runData(["outdated", "--json=v2"])
-        return try BrewJSON.decodeOutdated(data)
+        let outdated = try BrewJSON.decodeOutdated(data)
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+        // `brew outdated --json=v2` 只含名称与版本号；用 `brew info --json=v2`
+        // 批量拉取完整信息（描述、主页、许可证、Tap、依赖、caveats、cask 图标等）补全，
+        // 让“可更新”页与详情面板显示包的全部信息。失败时降级返回精简列表。
+        guard !outdated.isEmpty else { return [] }
+
+        let formulaNames = outdated.filter { $0.kind == .formula }.map(\.name)
+        let caskNames = outdated.filter { $0.kind == .cask }.map(\.name)
+
+        var fullByID: [String: Package] = [:]
+        if !formulaNames.isEmpty,
+           let full = try? await infoPackages(names: formulaNames, kind: .formula) {
+            for pkg in full { fullByID[pkg.id] = pkg }
+        }
+        if !caskNames.isEmpty,
+           let full = try? await infoPackages(names: caskNames, kind: .cask) {
+            for pkg in full { fullByID[pkg.id] = pkg }
+        }
+
+        guard !fullByID.isEmpty else { return outdated }
+
+        return outdated.map { entry in
+            guard var full = fullByID[entry.id] else { return entry }
+            // 版本与固定状态以 `brew outdated` 为准，其余字段取完整信息
+            full.version = entry.version ?? full.version
+            full.latestVersion = entry.latestVersion ?? full.latestVersion
+            full.isInstalled = true
+            full.isOutdated = true
+            full.isPinned = entry.isPinned || full.isPinned
+            return full
+        }
     }
 
     /// 全部可安装包名（本地 tap 目录即时读取，毫秒级）。
@@ -423,7 +454,8 @@ actor BrewClient {
         return found
     }
 
-    private func infoPackages(names: [String], kind: PackageKind) async throws -> [Package] {
+    /// 批量拉取指定包的完整 info（search / outdated 补全共用），失败时逐个降级重试。
+    func infoPackages(names: [String], kind: PackageKind) async throws -> [Package] {
         guard !names.isEmpty else { return [] }
         let flag = kind == .formula ? "--formula" : "--cask"
         do {

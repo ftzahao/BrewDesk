@@ -491,11 +491,13 @@ nonisolated enum BrewJSON {
         let name: String
         let installedVersions: [String]?
         let currentVersion: String?
+        let pinned: Bool?
 
         enum CodingKeys: String, CodingKey {
             case name
             case installedVersions = "installed_versions"
             case currentVersion = "current_version"
+            case pinned
         }
 
         func asPackage() -> Package {
@@ -508,7 +510,7 @@ nonisolated enum BrewJSON {
                 homepage: nil,
                 isInstalled: true,
                 isOutdated: true,
-                isPinned: false,
+                isPinned: pinned ?? false,
                 dependencies: [],
                 installedOnRequest: true
             )
@@ -519,11 +521,13 @@ nonisolated enum BrewJSON {
         let name: String
         let installedVersions: [String]?
         let currentVersion: String?
+        let pinned: Bool?
 
         enum CodingKeys: String, CodingKey {
             case name
             case installedVersions = "installed_versions"
             case currentVersion = "current_version"
+            case pinned
         }
 
         func asPackage() -> Package {
@@ -536,7 +540,7 @@ nonisolated enum BrewJSON {
                 homepage: nil,
                 isInstalled: true,
                 isOutdated: true,
-                isPinned: false,
+                isPinned: pinned ?? false,
                 dependencies: [],
                 installedOnRequest: true
             )

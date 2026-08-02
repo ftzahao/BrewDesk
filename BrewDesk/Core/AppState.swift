@@ -911,6 +911,13 @@ final class AppState: ObservableObject {
         Task { await client.cancel() }
     }
 
+    /// 取消在途的「可更新」加载任务（列表为空且加载中时允许手动取消）。
+    func cancelOutdatedLoading() {
+        outdatedLoadTask?.cancel()
+        outdatedLoadTask = nil
+        outdatedLoadToken = nil
+    }
+
     // MARK: - Private
 
     private func runTask(kind: TaskKind, title: String, work: @escaping () async throws -> Void) async {

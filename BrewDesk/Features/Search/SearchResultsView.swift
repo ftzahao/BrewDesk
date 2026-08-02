@@ -88,11 +88,20 @@ struct SearchResultsView: View {
             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .glassID("home.searchbar")
 
-            List(selection: Binding(
-                get: { localSelection },
+            List(selection: Binding<Package.ID?>(
+                get: {
+                    // macOS 26 的 SwiftUI List(selection:) 若持有列表外的 ID，
+                    // 滚动目标回映会触发 NSOutlineView 行数不一致断言而闪退；
+                    // getter 兜底：只把当前列表内存在的选中项交给 List。
+                    guard let id = localSelection,
+                          state.searchResults.contains(where: { $0.id == id }) else { return nil }
+                    return id
+                },
                 set: { newValue in
+                    // localSelection 同步提交，让选中变更留在点击事务内，
+                    // 避免延迟事务与行数据刷新竞态触发 List 崩溃。
+                    localSelection = newValue
                     DispatchQueue.main.async {
-                        localSelection = newValue
                         state.selectedPackageID = newValue
                     }
                 }
@@ -113,10 +122,17 @@ struct SearchResultsView: View {
                 }
             }
             .scrollContentBackground(.hidden)
+            // 行数据变化时整体重建列表，销毁缓存的滚动目标（见 InstalledView 注释）。
+            .id(state.searchResults)
             .onReceive(state.$selectedPackageID) { id in
                 DispatchQueue.main.async {
-                    if localSelection != id {
+                    guard localSelection != id else { return }
+                    if let id, state.searchResults.contains(where: { $0.id == id }) {
                         localSelection = id
+                    } else {
+                        // 共享选中 ID 不属于当前列表（被过滤/来自其他页面）时不采纳，
+                        // 避免 List 持有无效选中项导致滚动回映崩溃。
+                        localSelection = nil
                     }
                 }
             }

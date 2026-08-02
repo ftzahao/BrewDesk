@@ -12,6 +12,17 @@
 - **维护** — 清理缓存，释放磁盘空间
 - **设置** — 自定义 Homebrew 路径、镜像源等配置
 
+## App 截图
+
+<img width="2844" height="2030" alt="BrewDesk - 2026-08-02 at 14 04 17 - 8uCeUjwG@2x" src="https://github.com/user-attachments/assets/f78bfd4c-767c-4165-b813-14a77a34b3fb" />
+<img width="2844" height="2030" alt="BrewDesk - 2026-08-02 at 14 04 34 - DJ2nsinG@2x" src="https://github.com/user-attachments/assets/7fe8836f-7b38-49d8-8cc2-84dd7b9bbcbc" />
+<img width="2844" height="2030" alt="BrewDesk - 2026-08-02 at 14 06 49 - DZ61xU3c@2x" src="https://github.com/user-attachments/assets/1276fc35-fff2-4e2d-8227-da0b6df909de" />
+<img width="2844" height="2030" alt="BrewDesk - 2026-08-02 at 14 06 54 - SKR7GdAg@2x" src="https://github.com/user-attachments/assets/15520023-969e-4b03-8650-c8e6fb35c936" />
+<img width="2844" height="2030" alt="BrewDesk - 2026-08-02 at 14 07 02 - YLtCopuk@2x" src="https://github.com/user-attachments/assets/b5358215-bb2c-4298-82d4-50643f41ed31" />
+
+
+
+
 ## 系统要求
 
 - macOS 26.5+

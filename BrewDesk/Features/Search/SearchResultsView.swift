@@ -48,8 +48,11 @@ struct SearchResultsView: View {
     private var listColumn: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .medium))
                 TextField("搜索 formula / cask", text: $state.searchQuery)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
                     .focused($searchFocused)
                     .onSubmit { Task { await state.runSearch() } }
                     .onChange(of: state.searchQuery) { _, newValue in
@@ -60,6 +63,17 @@ struct SearchResultsView: View {
                             state.scheduleSearch()
                         }
                     }
+                if !state.searchQuery.isEmpty {
+                    Button {
+                        state.searchQuery = ""
+                        searchFocused = true
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("清空")
+                }
 
                 Button("搜索") { Task { await state.runSearch() } }
                     .buttonStyle(.glassCapsule)
@@ -69,13 +83,16 @@ struct SearchResultsView: View {
                             || state.isSearching || state.isTaskRunning
                     )
             }
-            .padding(10)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .glassID("home.searchbar")
 
             List(selection: Binding(
                 get: { localSelection },
                 set: { newValue in
-                    localSelection = newValue
                     DispatchQueue.main.async {
+                        localSelection = newValue
                         state.selectedPackageID = newValue
                     }
                 }
@@ -95,9 +112,12 @@ struct SearchResultsView: View {
                         }
                 }
             }
+            .scrollContentBackground(.hidden)
             .onReceive(state.$selectedPackageID) { id in
-                if localSelection != id {
-                    localSelection = id
+                DispatchQueue.main.async {
+                    if localSelection != id {
+                        localSelection = id
+                    }
                 }
             }
             .overlay {
@@ -119,14 +139,15 @@ struct SearchResultsView: View {
                 }
             }
 
-            HStack {
-                Text(state.isSearching ? "搜索中…" :
-                     state.searchResults.isEmpty ? " " :
-                     "\(state.searchResults.count) 个结果 · \(state.searchResults.filter(\.isInstalled).count) 已安装"
-                ).font(.caption).foregroundStyle(.secondary)
-                Spacer()
+            GlassFooterBar {
+                HStack {
+                    Text(state.isSearching ? "搜索中…" :
+                         state.searchResults.isEmpty ? " " :
+                         "\(state.searchResults.count) 个结果 · \(state.searchResults.filter(\.isInstalled).count) 已安装"
+                    ).foregroundStyle(.secondary)
+                    Spacer()
+                }
             }
-            .padding(.horizontal, 12).padding(.vertical, 6).background(.bar)
         }
     }
 
@@ -151,11 +172,11 @@ struct SearchResultsView: View {
                     onSelectRelated: { state.selectInstalledPackage(named: $0) }
                 )
             } else {
-                ContentUnavailableView {
-                    Label("选择搜索结果", systemImage: "magnifyingglass")
-                } description: {
-                    Text("选择左侧结果后可安装、升级或查看依赖。")
-                }
+                GlassEmptyState(
+                    icon: "magnifyingglass",
+                    title: "选择搜索结果",
+                    subtitle: "选择左侧结果后可安装、升级或查看依赖。"
+                )
             }
         }
     }

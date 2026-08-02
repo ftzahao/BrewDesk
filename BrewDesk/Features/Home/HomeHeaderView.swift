@@ -11,7 +11,7 @@ struct HomeHeaderView: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("软件包目录")
@@ -33,9 +33,9 @@ struct HomeHeaderView: View {
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 18)
-        .padding(.bottom, 14)
+        .padding(.horizontal, Design.pagePadding)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
     }
 
     private var homebrewStatusText: some View {
@@ -59,5 +59,8 @@ struct HomeHeaderView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .glassEffect(.regular, in: Capsule())
     }
 }

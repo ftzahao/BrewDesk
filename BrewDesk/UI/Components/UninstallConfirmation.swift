@@ -131,8 +131,8 @@ private struct UninstallConfirmationSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             RoundedRectangle(cornerRadius: 10)
-                .fill(.regularMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 10).fill(tint.opacity(0.08)))
+                .fill(tint.opacity(0.08))
         }
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
     }
 }

@@ -92,10 +92,7 @@ nonisolated struct Package: Identifiable, Hashable, Sendable {
 
     var installedTimeLabel: String {
         guard let t = installedTime else { return "—" }
-        let fmt = DateFormatter()
-        fmt.dateStyle = .medium
-        fmt.timeStyle = .short
-        return fmt.string(from: t)
+        return t.formatted(date: .abbreviated, time: .shortened)
     }
 }
 

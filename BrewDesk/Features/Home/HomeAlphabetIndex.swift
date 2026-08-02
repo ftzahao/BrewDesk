@@ -43,11 +43,7 @@ struct HomeAlphabetIndex: View {
         .onTapGesture { /* 吞掉空白区域的点击，避免穿透到列表行 */ }
         .padding(.vertical, 4)
         .padding(.horizontal, 2)
-        .background {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(.thinMaterial)
-                .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
-        }
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .padding(.trailing, 4)
         .help("点击跳转到以该字母开头的软件包")
     }

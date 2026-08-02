@@ -13,20 +13,24 @@ struct MaintenanceView: View {
     @State private var brewfileImporterMode: BrewfileImporterMode?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                cleanupSection
-                brewfileSection
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    cleanupSection
+                    brewfileSection
+                }
+                .padding(Design.pagePadding)
             }
-            .padding(24)
+            .scrollContentBackground(.hidden)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background {
             Rectangle()
-                .fill(.regularMaterial)
+                .fill(.ultraThinMaterial)
                 .ignoresSafeArea()
         }
         .navigationTitle("维护")
+        .navigationSubtitle("清理缓存与 Brewfile 迁移工具")
         .task {
             if state.cleanupPreview == nil { await state.loadCleanupPreview() }
         }
@@ -47,10 +51,12 @@ struct MaintenanceView: View {
     }
 
     private var cleanupSection: some View {
-        GroupBox {
+        glassSection(title: "清理", systemImage: "trash") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Label("清除缓存", systemImage: "trash").font(.headline).help("brew cleanup --prune=all")
+                    Text("清除缓存")
+                        .font(.headline)
+                        .help("brew cleanup --prune=all")
                     Spacer()
                     Button { Task { await state.loadCleanupPreview() } } label: {
                         if state.isLoadingCleanupPreview {
@@ -78,7 +84,7 @@ struct MaintenanceView: View {
                         }
                         .frame(maxHeight: 220).padding(8)
                         .background {
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .fill(.regularMaterial)
                         }
                     }
@@ -88,11 +94,11 @@ struct MaintenanceView: View {
                     Text("点击刷新预览查看将删除的内容。").foregroundStyle(.secondary)
                 }
             }.padding(4)
-        } label: { Text("清理") }
+        }
     }
 
     private var brewfileSection: some View {
-        GroupBox {
+        glassSection(title: "Brewfile", systemImage: "doc.on.doc") {
             VStack(alignment: .leading, spacing: 12) {
                 Text("导出当前已安装列表，或从 Brewfile 安装 / 检查依赖。适合换机迁移。")
                     .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -124,12 +130,34 @@ struct MaintenanceView: View {
                     }
                     .padding(10)
                     .background {
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .fill(.regularMaterial)
                     }
                 }
             }.padding(4)
-        } label: { Text("Brewfile") }
+        }
+    }
+
+    private func glassSection<Content: View>(
+        title: String,
+        systemImage: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(title, systemImage: systemImage)
+                .font(.headline)
+            content()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous)
+                .fill(.regularMaterial)
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+        )
     }
 
     private func exportBrewfileViaPanel() { state.exportBrewfileInteractively() }

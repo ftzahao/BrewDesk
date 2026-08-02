@@ -169,38 +169,23 @@ actor BrewClient {
     func listServices() async throws -> [BrewService] {
         let data = try await runData(["services", "list", "--json"])
         var services = try ServicesJSON.decode(data)
-        // Use `brew services info --json` for each service to get accurate `running` status,
-        // since `brew services list --json` may report "stopped" for actually running services.
-        // 并行获取并限制并发进程数，避免逐个串行拉起 brew 子进程。
-        let count = services.count
-        let snapshot = services
-        var batchStart = 0
-        while batchStart < count {
-            let batchEnd = min(batchStart + Self.maxConcurrentBrewProcesses, count)
-            await withTaskGroup(of: (Int, BrewService?).self) { group in
-                for i in batchStart..<batchEnd {
-                    group.addTask { [self] in
-                        if let info = try? await self.serviceInfo(name: snapshot[i].name) {
-                            return (i, info)
-                        }
-                        return (i, nil)
-                    }
-                }
-                for await (index, info) in group {
-                    if let info { services[index] = info }
+        // `brew services list --json` 可能把在跑服务误报为 stopped，
+        // 用 `brew services info --json --all` 一次取回全部服务的权威 running/loaded 状态
+        // （单进程替代原来的每服务一个子进程，启动阶段从 1+N 降到 2 个进程）。
+        if let allData = try? await runData(["services", "info", "--json", "--all"]),
+           let rows = try? JSONDecoder().decode([ServiceInfoRow].self, from: allData) {
+            let byName = Dictionary(
+                rows.map { ($0.name, $0.asService()) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            for i in services.indices {
+                if let info = byName[services[i].name] {
+                    services[i] = info
                 }
             }
-            batchStart = batchEnd
         }
         return services
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    private func serviceInfo(name: String) async throws -> BrewService? {
-        let data = try? await runData(["services", "info", "--json", name])
-        guard let data, let rows = try? JSONDecoder().decode([ServiceInfoRow].self, from: data),
-              let row = rows.first else { return nil }
-        return row.asService()
     }
 
     func startService(_ name: String, onOutput: @escaping @Sendable (String) -> Void) async throws {

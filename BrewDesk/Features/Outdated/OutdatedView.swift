@@ -13,14 +13,19 @@ struct OutdatedView: View {
     private var selectedPackages: [Package] { packages.filter { selection.contains($0.id) } }
 
     var body: some View {
-        TwoColumnPage {
-            listColumn
-        } detail: {
-            detailColumn
+        VStack(spacing: 0) {
+            TwoColumnPage {
+                listColumn
+            } detail: {
+                detailColumn
+            }
         }
         .navigationTitle("可更新")
+        .navigationSubtitle("升级已安装的 formula 与 cask 到最新版本")
         .onChange(of: selection) { _, newValue in
-            state.setSelectedPackageID(newValue.first)
+            DispatchQueue.main.async {
+                state.setSelectedPackageID(newValue.first)
+            }
         }
         .task {
             await state.loadOutdated()
@@ -38,6 +43,7 @@ struct OutdatedView: View {
                     }
             }
         }
+        .scrollContentBackground(.hidden)
         .overlay {
             if state.isLoadingOutdated && packages.isEmpty {
                 ProgressView("检查更新…")
@@ -66,15 +72,17 @@ struct OutdatedView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            HStack {
-                Text(packages.isEmpty ? "0 项可更新" : "\(packages.count) 项可更新")
-                    .font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                if !selection.isEmpty {
-                    Text("已选 \(selection.count)").font(.caption).foregroundStyle(.secondary)
+            GlassFooterBar {
+                HStack {
+                    Text(packages.isEmpty ? "0 项可更新" : "\(packages.count) 项可更新")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if !selection.isEmpty {
+                        Text("已选 \(selection.count)")
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
-            .padding(.horizontal, 12).padding(.vertical, 6).background(.bar)
         }
     }
 
@@ -95,13 +103,18 @@ struct OutdatedView: View {
                     onSelectRelated: { state.selectInstalledPackage(named: $0) }
                 )
             } else if packages.isEmpty {
-                ContentUnavailableView {
-                    Label("无需更新", systemImage: "arrow.triangle.2.circlepath")
-                } description: { Text("所有已安装软件都已是最新版本。") }
+                GlassEmptyState(
+                    icon: "checkmark.seal.fill",
+                    title: "无需更新",
+                    subtitle: "所有已安装软件都已是最新版本。",
+                    tint: .green
+                )
             } else {
-                ContentUnavailableView {
-                    Label("选择要查看的软件包", systemImage: "arrow.triangle.2.circlepath")
-                } description: { Text("可多选后点击「升级所选」，或直接全部升级。") }
+                GlassEmptyState(
+                    icon: "arrow.triangle.2.circlepath",
+                    title: "选择要查看的软件包",
+                    subtitle: "可多选后点击「升级所选」，或直接全部升级。"
+                )
             }
         }
     }

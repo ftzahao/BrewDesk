@@ -9,6 +9,7 @@ import SwiftUI
 
 struct HomeQuickActions: View {
     @ObservedObject var state: AppState
+    @State private var hoveredItem: SidebarItem?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -23,6 +24,14 @@ struct HomeQuickActions: View {
         }
     }
 
+    private var actionIDs: [SidebarItem: String] {
+        [
+            .taps: "home.action.taps",
+            .maintenance: "home.action.maintenance",
+            .settings: "home.action.settings",
+        ]
+    }
+
     private func quickActionCard(
         _ item: SidebarItem,
         tint: Color,
@@ -34,11 +43,11 @@ struct HomeQuickActions: View {
         } label: {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(tint.opacity(0.14))
-                        .frame(width: 36, height: 36)
+                        .frame(width: 32, height: 32)
                     Image(systemName: item.filledImage)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(tint)
                 }
 
@@ -65,15 +74,23 @@ struct HomeQuickActions: View {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
+                    .offset(x: hoveredItem == item ? 3 : 0)
             }
             .padding(.horizontal, 14)
-            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
             .glassEffect(
                 .regular.interactive(),
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
+            .glassID(actionIDs[item] ?? item.rawValue)
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .scaleEffect(hoveredItem == item ? 1.015 : 1)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GlassCardButtonStyle())
+        .onHover { hovering in
+            withAnimation(Design.standardAnimation) {
+                hoveredItem = hovering ? item : nil
+            }
+        }
     }
 }

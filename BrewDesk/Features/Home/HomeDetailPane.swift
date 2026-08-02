@@ -65,30 +65,16 @@ struct HomeDetailPane: View {
     }
 
     private var emptyDetail: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(Color.accentColor.opacity(0.1))
-                    .frame(width: 76, height: 76)
-                Image(systemName: "square.grid.2x2")
-                    .font(.system(size: 30, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
-            }
-
-            VStack(spacing: 4) {
-                Text("选择一个软件包")
-                    .font(.title3.weight(.semibold))
-                Text("查看完整信息、依赖关系，并安装或升级")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
+        GlassEmptyState(
+            icon: "square.grid.2x2",
+            title: "选择一个软件包",
+            subtitle: "查看完整信息、依赖关系，并安装或升级"
+        ) {
             HStack(spacing: 8) {
                 shortcutHint("⌘F", "聚焦搜索")
                 shortcutHint("↵", "打开搜索结果")
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func shortcutHint(_ key: String, _ label: String) -> some View {
@@ -97,7 +83,7 @@ struct HomeDetailPane: View {
                 .font(.caption.monospaced().weight(.semibold))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(Capsule().fill(.thinMaterial))
+                .glassEffect(.regular, in: Capsule())
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)

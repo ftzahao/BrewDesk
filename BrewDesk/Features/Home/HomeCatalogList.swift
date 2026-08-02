@@ -14,6 +14,18 @@ struct HomeCatalogList: View {
 
     @State private var localSelection: Package.ID?
 
+    /// 异步绑定工具：避免在视图更新周期内直接修改 @Published 属性（didSet 会同步重建派生数据）
+    private func asyncBinding<T>(_ keyPath: ReferenceWritableKeyPath<AppState, T>) -> Binding<T> {
+        Binding(
+            get: { state[keyPath: keyPath] },
+            set: { newValue in
+                DispatchQueue.main.async {
+                    state[keyPath: keyPath] = newValue
+                }
+            }
+        )
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
@@ -22,8 +34,8 @@ struct HomeCatalogList: View {
                 List(selection: Binding(
                     get: { localSelection },
                     set: { newValue in
-                        localSelection = newValue
                         DispatchQueue.main.async {
+                            localSelection = newValue
                             state.selectedPackageID = newValue
                         }
                     }
@@ -51,6 +63,7 @@ struct HomeCatalogList: View {
                             }
                     }
                 }
+                .scrollContentBackground(.hidden)
                 .onChange(of: state.homeKindFilter) { _, _ in
                     scrollToFirst(proxy: proxy)
                 }
@@ -58,8 +71,10 @@ struct HomeCatalogList: View {
                     scrollToFirst(proxy: proxy)
                 }
                 .onReceive(state.$selectedPackageID) { id in
-                    if localSelection != id {
-                        localSelection = id
+                    DispatchQueue.main.async {
+                        if localSelection != id {
+                            localSelection = id
+                        }
                     }
                 }
                 .overlay(alignment: .trailing) {
@@ -92,20 +107,25 @@ struct HomeCatalogList: View {
 
     private var filterBar: some View {
         HStack(spacing: 10) {
-            Picker("类型", selection: $state.homeKindFilter) {
-                Text("全部").tag(Optional<PackageKind>.none)
-                Text("Formula").tag(Optional.some(PackageKind.formula))
-                Text("Cask").tag(Optional.some(PackageKind.cask))
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            GlassSegmentedControl(
+                options: [
+                    ("全部", Optional<PackageKind>.none),
+                    ("Formula", Optional.some(.formula)),
+                    ("Cask", Optional.some(.cask)),
+                ],
+                selection: asyncBinding(\.homeKindFilter),
+                idPrefix: "filter.kind"
+            )
             .frame(maxWidth: .infinity)
 
-            Toggle("已安装", isOn: $state.homeInstalledOnly)
+            Toggle("已安装", isOn: asyncBinding(\.homeInstalledOnly))
                 .toggleStyle(.checkbox)
                 .help("仅显示已安装的软件包")
         }
-        .padding(8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .glassID("home.searchbar")
     }
 
     private func scrollToFirst(proxy: ScrollViewProxy) {
@@ -157,20 +177,17 @@ struct HomeCatalogList: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
-            Text("共 \(state.homeFilteredCatalog.count) 项")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-            Spacer()
-            if state.isLoadingCatalog {
-                Text("加载中…")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+        GlassFooterBar {
+            HStack(spacing: 8) {
+                Text("共 \(state.homeFilteredCatalog.count) 项")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                Spacer()
+                if state.isLoadingCatalog {
+                    Text("加载中…")
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(.bar)
     }
 }

@@ -185,10 +185,10 @@ final class AppState: ObservableObject {
 
     /// 主页目录过滤状态（提升到 AppState，便于集中做派生数据缓存）
     @Published var homeKindFilter: PackageKind? = nil {
-        didSet { rebuildCatalogDerivedData() }
+        didSet { scheduleCatalogDerivedRebuild() }
     }
     @Published var homeInstalledOnly: Bool = false {
-        didSet { rebuildCatalogDerivedData() }
+        didSet { scheduleCatalogDerivedRebuild() }
     }
 
     /// 主页目录派生数据缓存：避免视图每帧对整个目录做全量过滤/统计
@@ -254,14 +254,25 @@ final class AppState: ObservableObject {
 
     func dependents(of package: Package) -> [String] {
         guard package.kind == .formula else { return [] }
-        return installed
-            .filter { $0.kind == .formula && $0.dependencies.contains(package.name) }
-            .map(\.name)
-            .sorted()
+        return (dependentsIndex[package.name] ?? []).sorted()
     }
 
     /// 已安装包名集合（在 loadInstalled 时一次性构建，避免视图反复创建）
     @Published private(set) var installedNameSet: Set<String> = []
+
+    /// 依赖反转索引：依赖名 → 依赖它的已安装 formula 名（loadInstalled 时重建，
+    /// 避免 dependents(of:) 在 5 个视图 body 里反复做 O(已装数 × 依赖数) 扫描）
+    private var dependentsIndex: [String: [String]] = [:]
+
+    private func rebuildDependentsIndex() {
+        var index: [String: [String]] = [:]
+        for pkg in installed where pkg.kind == .formula {
+            for dep in pkg.dependencies {
+                index[dep, default: []].append(pkg.name)
+            }
+        }
+        dependentsIndex = index
+    }
 
     // MARK: - Lifecycle
 
@@ -340,7 +351,9 @@ final class AppState: ObservableObject {
         defer { isLoadingInstalled = false }
         do {
             installed = try await client.installedPackages()
+            installedGen += 1
             installedNameSet = Set(installed.map(\.name))
+            rebuildDependentsIndex()
             // 安装状态可能已变化：仅当已安装 cask 集合真的变化时才清空图标缓存，
             // 避免每次刷新都重新扫描磁盘。
             let caskTokens = Set(installed.filter { $0.kind == .cask }.map(\.name))
@@ -375,6 +388,7 @@ final class AppState: ObservableObject {
         defer { isLoadingOutdated = false }
         do {
             outdated = try await client.outdatedPackages()
+            outdatedGen += 1
             enrichOutdatedWithInstalledInfo()
             enrichCatalogWithInstalledInfo()
             lastError = nil
@@ -434,6 +448,7 @@ final class AppState: ObservableObject {
             catalog = result.sorted {
                 $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
+            catalogGen += 1
             enrichCatalogWithInstalledInfo()
             lastError = nil
         } catch is CancellationError {} catch {
@@ -441,8 +456,21 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// 目录/已安装/可更新三份数据的版本号：enrich 按元组去重，
+    /// 避免 loadInstalled 与 loadOutdated 各触发一次全目录遍历。
+    private var installedGen = 0
+    private var outdatedGen = 0
+    private var catalogGen = 0
+    private var lastEnrichGens: (Int, Int, Int)?
+
     /// 用已安装/可更新列表补全目录的安装状态与版本信息。
     private func enrichCatalogWithInstalledInfo() {
+        // 版本元组必须在最顶部记录（含下方 installed 为空的早退分支），
+        // 否则同一版本内的后续调用会误跳过「清空安装标记」的路径。
+        let gens = (installedGen, outdatedGen, catalogGen)
+        if let last = lastEnrichGens, last == gens { return }
+        lastEnrichGens = gens
+
         guard !installed.isEmpty else {
             // 没有任何已安装包时，清掉目录中的安装/更新标记
             if catalog.contains(where: \.isInstalled) {
@@ -454,7 +482,7 @@ final class AppState: ObservableObject {
                     return copy
                 }
             }
-            rebuildCatalogDerivedData()
+            scheduleCatalogDerivedRebuild()
             return
         }
         let installedByToken = Dictionary(
@@ -488,7 +516,7 @@ final class AppState: ObservableObject {
         if changed {
             catalog = newCatalog
         }
-        rebuildCatalogDerivedData()
+        scheduleCatalogDerivedRebuild()
     }
 
     /// 主页详情：优先缓存，未命中时拉取完整信息并缓存。
@@ -971,8 +999,37 @@ final class AppState: ObservableObject {
     // MARK: - 派生数据缓存
 
     /// 目录级派生数据：统计 + 过滤结果 + 字母索引 + 选中索引。
-    /// 只在目录或过滤条件变化时重建，避免视图每帧全量遍历。
-    private func rebuildCatalogDerivedData() {
+    /// 计算移出主线程（目录 ~14000 项，全量遍历 + 14k 键字典构建），
+    /// 用 generation 计数丢弃过期结果，主线程只做一次性写回。
+    private var derivedGeneration = 0
+
+    private func scheduleCatalogDerivedRebuild() {
+        derivedGeneration += 1
+        let generation = derivedGeneration
+        let snapshot = catalog // COW：仅 retain，零拷贝
+        let kindFilter = homeKindFilter
+        let installedOnly = homeInstalledOnly
+
+        Task.detached {
+            let result = AppState.computeCatalogDerivedData(
+                catalog: snapshot, kindFilter: kindFilter, installedOnly: installedOnly
+            )
+            await MainActor.run {
+                guard self.derivedGeneration == generation else { return }
+                self.homeFilteredCatalog = result.filtered
+                self.homeCatalogIndex = result.index
+                self.homeIndexLetters = result.letters
+                self.catalogInstalledCount = result.installedCount
+                self.catalogFormulaCount = result.formulaCount
+                self.catalogCaskCount = result.caskCount
+            }
+        }
+    }
+
+    /// 纯函数：目录派生数据计算（nonisolated，可在任意执行器运行）。
+    nonisolated static func computeCatalogDerivedData(
+        catalog: [Package], kindFilter: PackageKind?, installedOnly: Bool
+    ) -> CatalogDerivedData {
         // 统计（基于完整目录，与历史语义一致）
         var installedCount = 0
         var formulaCount = 0
@@ -980,30 +1037,43 @@ final class AppState: ObservableObject {
             if pkg.kind == .formula { formulaCount += 1 }
             if pkg.isInstalled { installedCount += 1 }
         }
-        catalogInstalledCount = installedCount
-        catalogFormulaCount = formulaCount
-        catalogCaskCount = catalog.count - formulaCount
 
         // 过滤 + 字母索引 + O(1) 选中查找
-        let base = homeKindFilter.map { kind in
+        let base = kindFilter.map { kind in
             catalog.filter { $0.kind == kind }
         } ?? catalog
-        let filtered = homeInstalledOnly ? base.filter(\.isInstalled) : base
-        homeFilteredCatalog = filtered
+        let filtered = installedOnly ? base.filter(\.isInstalled) : base
 
         var index: [Package.ID: Int] = [:]
         index.reserveCapacity(filtered.count)
         for (i, pkg) in filtered.enumerated() {
             index[pkg.id] = i
         }
-        homeCatalogIndex = index
 
         var letters = Set<String>()
         for pkg in filtered {
             guard let first = pkg.name.first, first.isLetter else { continue }
             letters.insert(String(first).lowercased())
         }
-        homeIndexLetters = letters.sorted()
+
+        return CatalogDerivedData(
+            filtered: filtered,
+            index: index,
+            letters: letters.sorted(),
+            installedCount: installedCount,
+            formulaCount: formulaCount,
+            caskCount: catalog.count - formulaCount
+        )
+    }
+
+    /// 目录派生数据的计算结果，跨线程传递。
+    nonisolated struct CatalogDerivedData: Sendable {
+        let filtered: [Package]
+        let index: [String: Int]
+        let letters: [String]
+        let installedCount: Int
+        let formulaCount: Int
+        let caskCount: Int
     }
 
     /// 写入完整详情缓存并做 LRU 淘汰，防止内存无界增长。
@@ -1022,6 +1092,8 @@ final class AppState: ObservableObject {
     /// 同步更新完整目录与主页过滤缓存中的同一条目，
     /// 保证详情视图拿到完整信息，且无需重建整个派生数据。
     private func syncCatalogEntry(_ package: Package) {
+        // 使在途的派生重建结果作废，避免其写回回滚刚同步的条目
+        derivedGeneration += 1
         if let idx = catalog.firstIndex(where: { $0.id == package.id }) {
             catalog[idx] = package
         }

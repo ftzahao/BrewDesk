@@ -11,12 +11,15 @@ struct ServicesView: View {
     @State private var localSelection: BrewService.ID?
 
     var body: some View {
-        TwoColumnPage {
-            listColumn
-        } detail: {
-            detailColumn
+        VStack(spacing: 0) {
+            TwoColumnPage {
+                listColumn
+            } detail: {
+                detailColumn
+            }
         }
         .navigationTitle("服务")
+        .navigationSubtitle("管理 Homebrew services 的启动、停止与重启")
         .task { await state.loadServices() }
     }
 
@@ -24,8 +27,8 @@ struct ServicesView: View {
         List(selection: Binding(
             get: { localSelection },
             set: { newValue in
-                localSelection = newValue
                 DispatchQueue.main.async {
+                    localSelection = newValue
                     state.selectedServiceID = newValue
                 }
             }
@@ -36,9 +39,12 @@ struct ServicesView: View {
                     .contextMenu { serviceMenu(service) }
             }
         }
+        .scrollContentBackground(.hidden)
         .onReceive(state.$selectedServiceID) { id in
-            if localSelection != id {
-                localSelection = id
+            DispatchQueue.main.async {
+                if localSelection != id {
+                    localSelection = id
+                }
             }
         }
         .overlay {
@@ -60,12 +66,13 @@ struct ServicesView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            HStack {
-                Text("\(state.services.count) 个服务 · \(state.runningServiceCount) 运行中")
-                    .font(.caption).foregroundStyle(.secondary)
-                Spacer()
+            GlassFooterBar {
+                HStack {
+                    Text("\(state.services.count) 个服务 · \(state.runningServiceCount) 运行中")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
             }
-            .padding(.horizontal, 12).padding(.vertical, 6).background(.bar)
         }
     }
 
@@ -79,11 +86,12 @@ struct ServicesView: View {
                 onRestart: { Task { await state.restartService(service) } }
             )
         } else {
-            ContentUnavailableView {
-                Label("选择一个服务", systemImage: "bolt.horizontal.circle")
-            } description: {
-                Text("在左侧列表中选择，可查看状态、启动或停止服务。")
-            }
+            GlassEmptyState(
+                icon: "bolt.horizontal.circle",
+                title: "选择一个服务",
+                subtitle: "在左侧列表中选择，可查看状态、启动或停止服务。",
+                tint: .green
+            )
         }
     }
 
@@ -133,20 +141,47 @@ private struct ServiceDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(service.name).font(.largeTitle.weight(.semibold))
-                    Label(service.status.title, systemImage: service.status.systemImage)
-                        .foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(statusColor.opacity(0.14))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: service.status.systemImage)
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(statusColor)
+                    }
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(service.name)
+                            .font(.title2.weight(.semibold))
+                            .textSelection(.enabled)
+                            .lineLimit(1)
+                        Text(service.status.title)
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background {
+                                Capsule().fill(statusColor.opacity(0.12))
+                            }
+                            .foregroundStyle(statusColor)
+                    }
+
+                    Spacer(minLength: 0)
                 }
+
                 HStack(spacing: 10) {
                     Button("启动", systemImage: "play.fill", action: onStart)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassCapsule(tint: .green))
                         .disabled(isBusy || service.status == .started)
                     Button("停止", systemImage: "stop.fill", action: onStop)
+                        .buttonStyle(.glassCapsule)
                         .disabled(isBusy || service.status == .stopped || service.status == .none)
                     Button("重启", systemImage: "arrow.clockwise", action: onRestart)
+                        .buttonStyle(.glassCapsule)
                         .disabled(isBusy)
                 }
+
                 GroupBox("信息") {
                     Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 10) {
                         gridRow("状态", "\(service.status.title) (\(service.statusRaw))")
@@ -156,9 +191,19 @@ private struct ServiceDetailView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(4)
                 }
-            }.padding(24).frame(maxWidth: 720, alignment: .leading)
+            }
+            .padding(Design.contentPadding)
+            .frame(maxWidth: 720, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var statusColor: Color {
+        switch service.status {
+        case .started: .green
+        case .error: .orange
+        case .stopped, .none, .unknown: .secondary
+        }
     }
 
     private func gridRow(_ label: String, _ value: String) -> some View {

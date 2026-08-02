@@ -37,6 +37,8 @@ struct StatusToast: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(.regularMaterial)
         }
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+        .glassEffectTransition(.materialize)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .fixedSize(horizontal: false, vertical: true)
     }

@@ -36,12 +36,15 @@ struct InstalledView: View {
     }
 
     var body: some View {
-        TwoColumnPage {
-            listColumn
-        } detail: {
-            detailColumn
+        VStack(spacing: 0) {
+            TwoColumnPage {
+                listColumn
+            } detail: {
+                detailColumn
+            }
         }
         .navigationTitle("已安装")
+        .navigationSubtitle("管理本机已安装的 formula 与 cask")
         .uninstallConfirmation(
             package: $pendingUninstall,
             dependents: { state.dependents(of: $0) },
@@ -56,8 +59,8 @@ struct InstalledView: View {
         List(selection: Binding(
             get: { localSelection },
             set: { newValue in
-                localSelection = newValue
                 DispatchQueue.main.async {
+                    localSelection = newValue
                     state.selectedPackageID = newValue
                 }
             }
@@ -84,9 +87,12 @@ struct InstalledView: View {
                     }
             }
         }
+        .scrollContentBackground(.hidden)
         .onReceive(state.$selectedPackageID) { id in
-            if localSelection != id {
-                localSelection = id
+            DispatchQueue.main.async {
+                if localSelection != id {
+                    localSelection = id
+                }
             }
         }
         .overlay {
@@ -114,14 +120,15 @@ struct InstalledView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            HStack {
-                Text(state.showOnlyRequested
-                     ? "\(packages.count) 项（仅手动）· 共 \(state.installed.count) 已安装"
-                     : "\(packages.count) 项")
-                    .font(.caption).foregroundStyle(.secondary)
-                Spacer()
+            GlassFooterBar {
+                HStack {
+                    Text(state.showOnlyRequested
+                         ? "\(packages.count) 项（仅手动）· 共 \(state.installed.count) 已安装"
+                         : "\(packages.count) 项")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
             }
-            .padding(.horizontal, 12).padding(.vertical, 6).background(.bar)
         }
     }
 
@@ -166,11 +173,11 @@ struct InstalledView: View {
                     onSelectRelated: { state.selectInstalledPackage(named: $0) }
                 )
             } else {
-                ContentUnavailableView {
-                    Label("选择一个软件包", systemImage: "shippingbox")
-                } description: {
-                    Text("在左侧列表中选择，可查看详情、升级或卸载。")
-                }
+                GlassEmptyState(
+                    icon: "shippingbox",
+                    title: "选择一个软件包",
+                    subtitle: "在左侧列表中选择，可查看详情、升级或卸载。"
+                )
             }
         }
     }

@@ -16,6 +16,7 @@ struct HomeStatsRow: View {
                 icon: "shippingbox.fill",
                 tint: .blue,
                 title: "已安装",
+                id: "home.stat.installed",
                 value: state.catalogInstalledCount,
                 action: { state.selectedSidebar = .installed }
             )
@@ -23,6 +24,7 @@ struct HomeStatsRow: View {
                 icon: "arrow.triangle.2.circlepath",
                 tint: .orange,
                 title: "可更新",
+                id: "home.stat.outdated",
                 value: state.outdated.count,
                 highlighted: state.outdated.count > 0,
                 action: { state.selectedSidebar = .outdated }
@@ -31,6 +33,7 @@ struct HomeStatsRow: View {
                 icon: "bolt.horizontal.circle.fill",
                 tint: .red,
                 title: "服务运行中",
+                id: "home.stat.services",
                 value: state.runningServiceCount,
                 total: state.services.count,
                 action: { state.selectedSidebar = .services }
@@ -44,6 +47,7 @@ private struct StatCard: View {
     let icon: String
     let tint: Color
     let title: String
+    let id: String
     let value: Int
     var total: Int? = nil
     var highlighted: Bool = false
@@ -62,17 +66,17 @@ private struct StatCard: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(tint.opacity(0.14))
-                        .frame(width: 36, height: 36)
+                        .frame(width: 32, height: 32)
                     Image(systemName: icon)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(tint)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(valueText)
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .contentTransition(.numericText())
                     Text(title)
@@ -83,11 +87,12 @@ private struct StatCard: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 14)
-            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
             .glassEffect(
                 .regular.interactive(),
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
+            .glassID(id)
             .overlay {
                 if highlighted {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -97,7 +102,7 @@ private struct StatCard: View {
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .scaleEffect(isHovered ? 1.015 : 1)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GlassCardButtonStyle())
         .onHover { hovering in
             isHovered = hovering
         }

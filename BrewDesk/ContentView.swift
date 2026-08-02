@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var state: AppState
+    @Namespace private var glassNamespace
 
     var body: some View {
         Group {
@@ -21,6 +22,7 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 900, minHeight: 560)
+        .toolbarBackground(.visible, for: .windowToolbar)
         .overlay(alignment: .top) {
             if let error = state.lastError {
                 StatusToast(message: error, isError: true) {
@@ -36,6 +38,17 @@ struct ContentView: View {
                 .padding()
             }
         }
+        .overlay(alignment: .bottom) {
+            if state.isTaskRunning {
+                TaskStatusBar(
+                    title: state.currentTaskTitle ?? "任务运行中…",
+                    onCancel: { state.cancelTask() }
+                )
+                .padding(.bottom, 14)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.22), value: state.isTaskRunning)
         .animation(.easeOut(duration: 0.12), value: state.lastError)
         .animation(.easeOut(duration: 0.12), value: state.lastStatus)
         .onChange(of: state.selectedSidebar) { _, newValue in
@@ -43,31 +56,24 @@ struct ContentView: View {
                 state.deactivateSearch()
             }
         }
+        .environment(\.glassNamespace, glassNamespace)
     }
 
     private var mainInterface: some View {
         detail(for: state.selectedSidebar)
             .id(state.selectedSidebar)
-            .toolbar {
-                ToolbarItemGroup(placement: .primaryAction) {
-                    if state.isTaskRunning {
-                        ProgressView().controlSize(.small)
-                        Text(state.currentTaskTitle ?? "")
-                            .foregroundStyle(.secondary).font(.callout)
+        .toolbar {
+            if state.selectedSidebar != .home {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        state.selectedSidebar = .home
+                    } label: {
+                        Label("返回主页", systemImage: "chevron.left")
                     }
-                }
-
-                if state.selectedSidebar != .home {
-                    ToolbarItem(placement: .navigation) {
-                        Button {
-                            state.selectedSidebar = .home
-                        } label: {
-                            Label("返回主页", systemImage: "chevron.left")
-                        }
-                        .help("返回主页")
-                    }
+                    .help("返回主页")
                 }
             }
+        }
     }
 
     @ViewBuilder

@@ -20,12 +20,15 @@ struct TapsView: View {
     @State private var confirmUntrust = false
 
     var body: some View {
-        TwoColumnPage {
-            listColumn
-        } detail: {
-            detailColumn
+        VStack(spacing: 0) {
+            TwoColumnPage {
+                listColumn
+            } detail: {
+                detailColumn
+            }
         }
         .navigationTitle("Taps")
+        .navigationSubtitle("管理 Homebrew 软件源仓库与信任状态")
         .task {
             // 懒加载：进入页面时才拉取 Tap 列表（启动阶段不再急切加载）
             if state.taps.isEmpty, !state.isLoadingTaps {
@@ -124,6 +127,7 @@ struct TapsView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
         .overlay {
             if state.isLoadingTaps && state.taps.isEmpty {
                 ProgressView("加载 Taps…")
@@ -174,11 +178,11 @@ struct TapsView: View {
                     }
                 )
             } else {
-                ContentUnavailableView {
-                    Label("选择一个 Tap", systemImage: "square.grid.2x2")
-                } description: {
-                    Text("选择左侧 Tap 查看其包含的软件包。")
-                }
+                GlassEmptyState(
+                    icon: "square.grid.2x2",
+                    title: "选择一个 Tap",
+                    subtitle: "选择左侧 Tap 查看其包含的软件包。"
+                )
             }
         }
         .alert("确认安装？", isPresented: $confirmInstall, presenting: pendingInstall) { pkg in
@@ -274,7 +278,6 @@ private struct TapDetailView: View {
     var onUninstall: (Package) -> Void
 
     @State private var filterText = ""
-    @FocusState private var filterFocused: Bool
     @State private var pendingTrust: BrewTap?
     @State private var confirmTrust = false
     @State private var pendingUntrust: BrewTap?
@@ -302,12 +305,11 @@ private struct TapDetailView: View {
                 ProgressView("正在加载 Tap 包列表…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if allNames.isEmpty {
-                ContentUnavailableView {
-                    Label("Tap 为空", systemImage: "tray")
-                } description: {
-                    Text("该 Tap 暂无公式或 Cask。")
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                GlassEmptyState(
+                    icon: "tray",
+                    title: "Tap 为空",
+                    subtitle: "该 Tap 暂无公式或 Cask。"
+                )
             } else {
                 packageList
             }
@@ -349,21 +351,19 @@ private struct TapDetailView: View {
                                     .font(.caption2.weight(.medium))
                                     .padding(.horizontal, 6).padding(.vertical, 2)
                                     .background {
-                                        Capsule()
-                                            .fill(.regularMaterial)
-                                            .overlay(Capsule().fill(Color.green.opacity(0.12)))
+                                        Capsule().fill(Color.green.opacity(0.12))
                                     }
                                     .foregroundStyle(.green)
+                                    .glassEffect(.regular, in: Capsule())
                             } else {
                                 Label("未信任", systemImage: "lock.fill")
                                     .font(.caption2.weight(.medium))
                                     .padding(.horizontal, 6).padding(.vertical, 2)
                                     .background {
-                                        Capsule()
-                                            .fill(.regularMaterial)
-                                            .overlay(Capsule().fill(Color.orange.opacity(0.12)))
+                                        Capsule().fill(Color.orange.opacity(0.12))
                                     }
                                     .foregroundStyle(.orange)
+                                    .glassEffect(.regular, in: Capsule())
                             }
                         }
                     }
@@ -409,27 +409,7 @@ private struct TapDetailView: View {
                 }
             }
 
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("搜索 tap 内的包…", text: $filterText)
-                    .textFieldStyle(.plain)
-                    .focused($filterFocused)
-                if !filterText.isEmpty {
-                    Button {
-                        filterText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(8)
-            .background {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.regularMaterial)
-            }
+            GlassSearchField(prompt: "搜索 tap 内的包…", text: $filterText)
 
             if !tap.isOfficial && !tap.isTrusted {
                 HStack(spacing: 8) {
@@ -441,6 +421,7 @@ private struct TapDetailView: View {
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 8))
             }
         }
         .padding(16)
@@ -463,6 +444,7 @@ private struct TapDetailView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
         .overlay {
             if !filterText.isEmpty && filteredFormulaNames.isEmpty && filteredCaskNames.isEmpty {
                 ContentUnavailableView {
@@ -473,19 +455,20 @@ private struct TapDetailView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            HStack {
-                let total = filteredFormulaNames.count + filteredCaskNames.count
-                Text("显示 \(total) / \(allNames.count) 项")
-                    .font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                let installedCount = (filteredFormulaNames + filteredCaskNames)
-                    .filter { installedNames.contains($0) }.count
-                if installedCount > 0 {
-                    Text("\(installedCount) 已安装")
-                        .font(.caption).foregroundStyle(.green)
+            GlassFooterBar {
+                HStack {
+                    let total = filteredFormulaNames.count + filteredCaskNames.count
+                    Text("显示 \(total) / \(allNames.count) 项")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    let installedCount = (filteredFormulaNames + filteredCaskNames)
+                        .filter { installedNames.contains($0) }.count
+                    if installedCount > 0 {
+                        Text("\(installedCount) 已安装")
+                            .foregroundStyle(.green)
+                    }
                 }
             }
-            .padding(.horizontal, 12).padding(.vertical, 6).background(.bar)
         }
     }
 

@@ -120,15 +120,10 @@ struct PackageDetailView: View {
                     )
                 }
             }
-            .padding(24)
+            .padding(Design.contentPadding)
             .frame(alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background {
-            Rectangle()
-                .fill(.thinMaterial)
-                .ignoresSafeArea()
-        }
         .sheet(isPresented: $showGraph) {
             DependencyGraphSheet(
                 package: package,
@@ -145,27 +140,32 @@ struct PackageDetailView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 12) {
-                // Package type icon with rounded background
+            HStack(alignment: .top, spacing: 12) {
                 CaskIconView(package: package, iconSize: 30, containerSize: 44)
 
-                Text(package.name)
-                    .font(.largeTitle.weight(.semibold))
-                    .textSelection(.enabled)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(package.name)
+                        .font(.title2.weight(.semibold))
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
 
-                Text(package.kind.title)
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background {
-                        Capsule().fill(.thinMaterial)
+                    // 徽章独立一行，长包名 + 多徽章时靠换行兜底，避免与图标/按钮竞争宽度
+                    HStack(spacing: 8) {
+                        Text(package.kind.title)
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background {
+                                Capsule().fill(.thinMaterial)
+                            }
+
+                        statusBadge
+
+                        if package.isPinned {
+                            badge("已固定", color: .purple)
+                        }
                     }
-
-                statusBadge
-
-                if package.isPinned {
-                    badge("已固定", color: .purple)
                 }
 
                 Spacer(minLength: 0)
@@ -178,7 +178,7 @@ struct PackageDetailView: View {
                 .buttonStyle(.glassCapsule)
                 .help("复制软件包名称")
             }
-            .fixedSize(horizontal: false, vertical: true)
+            .animation(Design.standardAnimation, value: statusText)
 
             if let desc = package.desc, !desc.isEmpty {
                 Text(desc)
@@ -213,8 +213,12 @@ struct PackageDetailView: View {
         }
         .padding(10)
         .background {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(color.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(color.opacity(0.25), lineWidth: 0.5)
+                )
         }
     }
 
@@ -235,9 +239,7 @@ struct PackageDetailView: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background {
-                Capsule()
-                    .fill(.regularMaterial)
-                    .overlay(Capsule().fill(color.opacity(0.12)))
+                Capsule().fill(color.opacity(0.12))
             }
             .foregroundStyle(color)
     }
@@ -428,9 +430,7 @@ struct PackageDetailView: View {
     }
 
     private func formatAnalytics(_ n: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        return formatter.string(from: NSNumber(value: n)) ?? "\(n)"
+        n.formatted(.number)
     }
 
     private func gridRow(_ label: String, _ value: String) -> some View {

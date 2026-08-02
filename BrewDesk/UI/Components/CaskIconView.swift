@@ -88,22 +88,60 @@ struct CaskIconView: View {
             return
         }
 
-        // 2) 文件系统扫描在后台线程执行（结果按 cask token 缓存）
+        // 2) 在途去重：同一 cask 已有扫描在跑时不重复启动（并发扫描可能已写入缓存）
+        guard CaskIconCache.shared.beginScan(for: package.name) else {
+            appIcon = CaskIconCache.shared.icon(for: package.name)
+            return
+        }
+
+        // 3) 文件系统扫描在后台线程执行；Task.detached 不继承外层取消，
+        //    用 withTaskCancellationHandler 显式传播：行滚出屏幕即终止扫描，
+        //    配合扫描循环内的取消检查点提前退出，避免孤儿扫描占满后台线程。
         let packageForScan = package
-        let path = await Task.detached(priority: .utility) {
-            CaskIconProvider.findAppPath(for: packageForScan)
-        }.value
+        let scanTask = Task.detached(priority: .utility) {
+            defer { CaskIconCache.shared.endScan(for: packageForScan.name) }
+            return CaskIconProvider.findAppPath(for: packageForScan)
+        }
+        let path = await withTaskCancellationHandler {
+            await scanTask.value
+        } onCancel: {
+            scanTask.cancel()
+        }
 
         guard !Task.isCancelled else { return }
         guard let path else { return }
 
         // NSWorkspace.icon(forFile:) 必须在 MainActor 上调用
         let nsImage = NSWorkspace.shared.icon(forFile: path)
-        nsImage.size = NSSize(width: 64, height: 64)
 
         guard !Task.isCancelled else { return }
-        CaskIconCache.shared.store(icon: nsImage, for: package.name)
-        appIcon = nsImage
+        // 缩样后再缓存：NSWorkspace 图标底层是 512-1024pt 全尺寸位图，
+        // 直接缓存会在浏览大量 cask 时占用数百 MB 内存。
+        let thumbnail = Self.downscaled(nsImage, points: 128)
+        CaskIconCache.shared.store(icon: thumbnail, for: package.name)
+        appIcon = thumbnail
+    }
+
+    /// 把全尺寸 NSImage 画成 points 尺寸的真缩略图（Retina 下 2x 像素），丢弃底层大位图。
+    private static func downscaled(_ image: NSImage, points: CGFloat) -> NSImage {
+        let px = Int(points * 2)
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ) else { return image }
+        rep.size = NSSize(width: points, height: points)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(
+            in: NSRect(x: 0, y: 0, width: points, height: points),
+            from: .zero, operation: .copy, fraction: 1
+        )
+        NSGraphicsContext.restoreGraphicsState()
+
+        let result = NSImage(size: NSSize(width: points, height: points))
+        result.addRepresentation(rep)
+        return result
     }
 }
 
@@ -122,6 +160,25 @@ nonisolated final class CaskIconCache: @unchecked Sendable {
     private var iconOrder: [String] = []
     private var paths: [String: String] = [:]
     private var misses: Set<String> = []
+    /// 正在扫描磁盘的 cask token，避免同一 token 并发启动多个扫描任务
+    private var inFlight: Set<String> = []
+
+    /// 尝试登记一次磁盘扫描。返回 false 表示该 token 已在扫描/已缓存/已知 miss，无需再扫。
+    func beginScan(for token: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !inFlight.contains(token), icons[token] == nil, !misses.contains(token) else {
+            return false
+        }
+        inFlight.insert(token)
+        return true
+    }
+
+    func endScan(for token: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        inFlight.remove(token)
+    }
 
     func icon(for token: String) -> NSImage? {
         lock.lock()
@@ -178,6 +235,7 @@ nonisolated final class CaskIconCache: @unchecked Sendable {
         iconOrder.removeAll()
         paths.removeAll()
         misses.removeAll()
+        inFlight.removeAll()
     }
 }
 
@@ -194,6 +252,7 @@ nonisolated private enum CaskIconProvider {
 
         // 1) 优先使用 brew 提供的权威安装路径（如 "/Applications/CleanShot X.app"）
         for artifact in package.caskArtifacts {
+            guard !Task.isCancelled else { return nil }
             guard let target = artifact.target else { continue }
             let expanded = (target as NSString).expandingTildeInPath
             if isAppBundle(at: expanded) {
@@ -224,6 +283,7 @@ nonisolated private enum CaskIconProvider {
     /// 按权威 app 名精确查找（不做猜测）
     private static func findExactApp(appNames: [String], token: String, version: String?) -> String? {
         for caskroom in caskroomRoots {
+            guard !Task.isCancelled else { return nil }
             let root = (caskroom as NSString).appendingPathComponent(token)
             guard FileManager.default.fileExists(atPath: root) else { continue }
 
@@ -244,6 +304,7 @@ nonisolated private enum CaskIconProvider {
 
         // 应用目录（/Applications、~/Applications）精确查找
         for appName in appNames {
+            guard !Task.isCancelled else { return nil }
             if let path = findAppNamed(appName, in: applicationRoots()) {
                 return path
             }
@@ -256,6 +317,7 @@ nonisolated private enum CaskIconProvider {
         let matcher = AppNameMatcher(candidates: namingCandidates(token: token, displayNames: displayNames))
 
         for caskroom in caskroomRoots {
+            guard !Task.isCancelled else { return nil }
             let root = (caskroom as NSString).appendingPathComponent(token)
             guard FileManager.default.fileExists(atPath: root) else { continue }
             if let found = findMatchingApp(in: root, matcher: matcher, depth: 4) {
@@ -264,6 +326,7 @@ nonisolated private enum CaskIconProvider {
         }
 
         for basePath in applicationRoots() {
+            guard !Task.isCancelled else { return nil }
             guard let contents = try? FileManager.default.contentsOfDirectory(atPath: basePath) else { continue }
             for item in contents where item.hasSuffix(".app") {
                 if matcher.matches(item: item) {
@@ -282,6 +345,7 @@ nonisolated private enum CaskIconProvider {
         guard let contents = try? FileManager.default.contentsOfDirectory(atPath: directory) else { return nil }
 
         for item in contents where !item.hasPrefix(".") {
+            guard !Task.isCancelled else { return nil }
             let fullPath = (directory as NSString).appendingPathComponent(item)
             var isDir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
@@ -315,6 +379,7 @@ nonisolated private enum CaskIconProvider {
         }
 
         for basePath in roots {
+            guard !Task.isCancelled else { return nil }
             guard let contents = try? FileManager.default.contentsOfDirectory(atPath: basePath) else { continue }
             for item in contents {
                 if targets.contains(where: { $0.localizedCaseInsensitiveCompare(item) == .orderedSame }) {
@@ -331,6 +396,7 @@ nonisolated private enum CaskIconProvider {
         guard let contents = try? FileManager.default.contentsOfDirectory(atPath: directory) else { return nil }
 
         for item in contents where !item.hasPrefix(".") {
+            guard !Task.isCancelled else { return nil }
             let fullPath = (directory as NSString).appendingPathComponent(item)
             var isDir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
@@ -383,13 +449,16 @@ nonisolated private enum CaskIconProvider {
         ]
     }
 
-    /// Homebrew 的 Caskroom 根目录（支持 Apple Silicon / Intel / 自定义前缀）
+    /// Homebrew 的 Caskroom 根目录（支持 Apple Silicon / Intel / 自定义前缀）。
+    /// 标准路径存在时直接使用，跳过 BrewLocator.locate()（会同步拉起 2 个 brew 子进程）；
+    /// 仅当标准路径都不存在（自定义前缀安装）时才定位。
+    /// 已知边界：同时装有标准 + 自定义前缀两套 brew 时只覆盖标准路径，图标回退 SF Symbol。
     private static let caskroomRoots: [String] = {
         var roots = [
             "/opt/homebrew/Caskroom",
             "/usr/local/Caskroom",
-        ]
-        if let install = BrewLocator.locate() {
+        ].filter { FileManager.default.fileExists(atPath: $0) }
+        if roots.isEmpty, let install = BrewLocator.locate() {
             roots.append((install.prefix as NSString).appendingPathComponent("Caskroom"))
         }
         return Array(Set(roots))

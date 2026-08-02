@@ -50,12 +50,12 @@ struct DependencyGraphView: View {
                     maxHeight: isExpanded ? .infinity : 360
                 )
                 .background {
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(.regularMaterial)
                 }
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(Color.primary.opacity(0.06))
+                        .strokeBorder(Color.primary.opacity(0.08))
                 )
             }
 

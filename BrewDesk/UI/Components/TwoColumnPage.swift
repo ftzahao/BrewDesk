@@ -22,11 +22,15 @@ struct TwoColumnPage<ListContent: View, DetailContent: View>: View {
                 .frame(maxHeight: .infinity)
                 .layoutPriority(0)
 
+            Rectangle()
+                .fill(Color.primary.opacity(0.06))
+                .frame(width: 1)
+
             detail()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background {
                     Rectangle()
-                        .fill(.regularMaterial)
+                        .fill(.ultraThinMaterial)
                         .ignoresSafeArea()
                 }
                 .layoutPriority(1)

@@ -20,7 +20,7 @@ struct ServicesView: View {
         }
         .navigationTitle("服务")
         .navigationSubtitle("管理 Homebrew services 的启动、停止与重启")
-        .task { await state.loadServices() }
+        .task { await state.loadServicesIfNeeded() }
     }
 
     private var listColumn: some View {

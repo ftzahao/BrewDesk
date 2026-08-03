@@ -32,7 +32,7 @@ struct MaintenanceView: View {
         .navigationTitle("维护")
         .navigationSubtitle("清理缓存与 Brewfile 迁移工具")
         .task {
-            if state.cleanupPreview == nil { await state.loadCleanupPreview() }
+            await state.loadCleanupPreviewIfNeeded()
         }
         .alert("确认清理？", isPresented: $confirmCleanup) {
             Button("清理", role: .destructive) { Task { await state.runCleanup() } }

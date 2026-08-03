@@ -332,6 +332,53 @@ final class AppState: ObservableObject {
         _ = await (a, b, c)
     }
 
+    // MARK: - 数据免重载（页面切换流畅度）
+
+    /// 数据新鲜度阈值：超过该时长后，下次进入页面才重新拉取（秒）。
+    static let dataStalenessInterval: TimeInterval = 300
+
+    /// 各数据集最后成功加载时间；.distantPast 表示本会话尚未加载。
+    private(set) var installedLoadedAt = Date.distantPast
+    private(set) var outdatedLoadedAt = Date.distantPast
+    private(set) var servicesLoadedAt = Date.distantPast
+    private(set) var tapsLoadedAt = Date.distantPast
+    private(set) var catalogLoadedAt = Date.distantPast
+    private(set) var cleanupPreviewLoadedAt = Date.distantPast
+
+    private func isStale(_ loadedAt: Date) -> Bool {
+        Date().timeIntervalSince(loadedAt) > Self.dataStalenessInterval
+    }
+
+    func loadInstalledIfNeeded() async {
+        guard isStale(installedLoadedAt) else { return }
+        await loadInstalled()
+    }
+
+    func loadOutdatedIfNeeded() async {
+        guard isStale(outdatedLoadedAt) else { return }
+        await loadOutdated()
+    }
+
+    func loadServicesIfNeeded() async {
+        guard isStale(servicesLoadedAt) else { return }
+        await loadServices()
+    }
+
+    func loadTapsIfNeeded() async {
+        guard isStale(tapsLoadedAt) else { return }
+        await loadTaps()
+    }
+
+    func loadCatalogIfNeeded() async {
+        guard isStale(catalogLoadedAt) else { return }
+        await loadCatalog()
+    }
+
+    func loadCleanupPreviewIfNeeded() async {
+        guard isStale(cleanupPreviewLoadedAt) else { return }
+        await loadCleanupPreview()
+    }
+
     func loadInstalled() async {
         guard installation != nil else { return }
         if let running = installedLoadTask {
@@ -364,6 +411,7 @@ final class AppState: ObservableObject {
             enrichOutdatedWithInstalledInfo()
             enrichCatalogWithInstalledInfo()
             lastError = nil
+            installedLoadedAt = Date()
         } catch is CancellationError {} catch {
             lastError = error.localizedDescription
         }
@@ -392,6 +440,7 @@ final class AppState: ObservableObject {
             enrichOutdatedWithInstalledInfo()
             enrichCatalogWithInstalledInfo()
             lastError = nil
+            outdatedLoadedAt = Date()
         } catch is CancellationError {} catch {
             lastError = error.localizedDescription
         }
@@ -451,6 +500,7 @@ final class AppState: ObservableObject {
             catalogGen += 1
             enrichCatalogWithInstalledInfo()
             lastError = nil
+            catalogLoadedAt = Date()
         } catch is CancellationError {} catch {
             lastError = error.localizedDescription
         }
@@ -578,6 +628,7 @@ final class AppState: ObservableObject {
         do {
             services = try await client.listServices()
             lastError = nil
+            servicesLoadedAt = Date()
         } catch is CancellationError {} catch {
             lastError = error.localizedDescription
         }
@@ -607,6 +658,7 @@ final class AppState: ObservableObject {
             }.value
             taps = result
             lastError = nil
+            tapsLoadedAt = Date()
         } catch {
             lastError = error.localizedDescription
         }
@@ -754,6 +806,7 @@ final class AppState: ObservableObject {
         do {
             cleanupPreview = try await client.cleanupPreview()
             lastError = nil
+            cleanupPreviewLoadedAt = Date()
         } catch {
             lastError = error.localizedDescription
         }

@@ -56,9 +56,7 @@ struct HomeView: View {
             onConfirm: { pkg in Task { await state.uninstall(pkg) } }
         )
         .task {
-            if state.catalog.isEmpty {
-                await state.loadCatalog()
-            }
+            await state.loadCatalogIfNeeded()
         }
     }
 

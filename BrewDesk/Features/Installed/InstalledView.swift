@@ -51,7 +51,7 @@ struct InstalledView: View {
             onConfirm: { pkg in Task { await state.uninstall(pkg) } }
         )
         .task {
-            await state.loadInstalled()
+            await state.loadInstalledIfNeeded()
         }
     }
 

@@ -60,8 +60,12 @@ struct ContentView: View {
     }
 
     private var mainInterface: some View {
-        detail(for: state.selectedSidebar)
-            .id(state.selectedSidebar)
+        ZStack {
+            detail(for: state.selectedSidebar)
+                .transition(pageTransition)
+        }
+        .animation(Design.standardAnimation, value: state.selectedSidebar)
+        .animation(Design.standardAnimation, value: state.isSearchActive)
         .toolbar {
             if state.selectedSidebar != .home {
                 ToolbarItem(placement: .navigation) {
@@ -76,14 +80,24 @@ struct ContentView: View {
         }
     }
 
+    /// 页面过渡：入场淡入 + 轻微上浮，离场仅淡出。
+    private var pageTransition: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: 8)),
+            removal: .opacity
+        )
+    }
+
     @ViewBuilder
     private func detail(for item: SidebarItem) -> some View {
         switch item {
         case .home:
             if state.isSearchActive {
                 SearchResultsView(state: state)
+                    .transition(pageTransition)
             } else {
                 HomeView(state: state)
+                    .transition(pageTransition)
             }
         case .installed: InstalledView(state: state)
         case .outdated: OutdatedView(state: state)

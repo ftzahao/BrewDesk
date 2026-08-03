@@ -28,7 +28,7 @@ struct OutdatedView: View {
             }
         }
         .task {
-            await state.loadOutdated()
+            await state.loadOutdatedIfNeeded()
         }
     }
 

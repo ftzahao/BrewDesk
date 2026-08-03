@@ -30,10 +30,7 @@ struct TapsView: View {
         .navigationTitle("Taps")
         .navigationSubtitle("管理 Homebrew 软件源仓库与信任状态")
         .task {
-            // 懒加载：进入页面时才拉取 Tap 列表（启动阶段不再急切加载）
-            if state.taps.isEmpty, !state.isLoadingTaps {
-                await state.loadTaps()
-            }
+            await state.loadTapsIfNeeded()
         }
         .alert("添加 Tap", isPresented: $showAddTap) {
             TextField("user/repo", text: $newTapName)

@@ -13,14 +13,11 @@
 - **设置** — 自定义 Homebrew 路径、镜像源等配置
 
 ## App 截图
-
-<img width="2844" height="2030" alt="BrewDesk - 2026-08-02 at 14 04 17 - 8uCeUjwG@2x" src="https://github.com/user-attachments/assets/f78bfd4c-767c-4165-b813-14a77a34b3fb" />
-<img width="2844" height="2030" alt="BrewDesk - 2026-08-02 at 14 04 34 - DJ2nsinG@2x" src="https://github.com/user-attachments/assets/7fe8836f-7b38-49d8-8cc2-84dd7b9bbcbc" />
-<img width="2844" height="2030" alt="BrewDesk - 2026-08-02 at 14 06 49 - DZ61xU3c@2x" src="https://github.com/user-attachments/assets/1276fc35-fff2-4e2d-8227-da0b6df909de" />
-<img width="2844" height="2030" alt="BrewDesk - 2026-08-02 at 14 06 54 - SKR7GdAg@2x" src="https://github.com/user-attachments/assets/15520023-969e-4b03-8650-c8e6fb35c936" />
-<img width="2844" height="2030" alt="BrewDesk - 2026-08-02 at 14 07 02 - YLtCopuk@2x" src="https://github.com/user-attachments/assets/b5358215-bb2c-4298-82d4-50643f41ed31" />
-
-
+<img width="2434" height="1786" alt="截屏2026-08-10 11 59 51 BrewDesk" src="https://github.com/user-attachments/assets/99670cdd-7a8d-4d9d-9cde-f7a026c482ad" />
+<img width="2434" height="1786" alt="截屏2026-08-10 12 00 27 BrewDesk" src="https://github.com/user-attachments/assets/21142fb1-f72e-44d9-bcb9-515a8b1c6db3" />
+<img width="2434" height="1786" alt="截屏2026-08-10 12 00 35 BrewDesk" src="https://github.com/user-attachments/assets/fd2c95d6-8a50-4f30-8685-93d217927efa" />
+<img width="2434" height="1786" alt="截屏2026-08-10 11 59 58 BrewDesk" src="https://github.com/user-attachments/assets/419f2115-b385-4296-8827-1579c1ef31d7" />
+<img width="2434" height="1786" alt="截屏2026-08-10 12 00 38 BrewDesk" src="https://github.com/user-attachments/assets/53515067-0507-4f72-8256-bfec23c99742" />
 
 
 ## 系统要求

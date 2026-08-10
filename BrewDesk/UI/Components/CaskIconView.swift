@@ -117,7 +117,9 @@ struct CaskIconView: View {
         guard !Task.isCancelled else { return }
         // 缩样后再缓存：NSWorkspace 图标底层是 512-1024pt 全尺寸位图，
         // 直接缓存会在浏览大量 cask 时占用数百 MB 内存。
-        let thumbnail = Self.downscaled(nsImage, points: 128)
+        // 64pt（Retina 2x 下 128px）足够界面最大显示尺寸（详情页 44pt），
+        // 512 个图标的内存占用从约 134MB 降到约 33MB。
+        let thumbnail = Self.downscaled(nsImage, points: 64)
         CaskIconCache.shared.store(icon: thumbnail, for: package.name)
         appIcon = thumbnail
     }
@@ -148,7 +150,7 @@ struct CaskIconView: View {
 // MARK: - 图标与路径缓存
 
 /// 跨行复用的 cask 图标缓存，避免每次滚动/刷新都重新扫描磁盘。
-/// AppState 在刷新已安装/可更新列表后会调用 invalidate() 清空，保证安装/卸载后数据正确。
+/// AppState 在已安装 cask 集合变化后调用 invalidate(keeping:)，仅清除已卸载 cask 的条目。
 nonisolated final class CaskIconCache: @unchecked Sendable {
     static let shared = CaskIconCache()
 
@@ -228,14 +230,17 @@ nonisolated final class CaskIconCache: @unchecked Sendable {
         misses.insert(token)
     }
 
-    func invalidate() {
+    /// 仅保留指定 token（当前仍安装的 cask）的缓存，其余清除。
+    /// 调用时机：已安装 cask 集合变化时。未变化的 cask 图标/路径/miss 记录
+    /// 全部保留，避免装一个 cask 后刷新就重扫磁盘并重绘全部图标。
+    func invalidate(keeping tokens: Set<String>) {
         lock.lock()
         defer { lock.unlock() }
-        icons.removeAll()
-        iconOrder.removeAll()
-        paths.removeAll()
-        misses.removeAll()
-        inFlight.removeAll()
+        icons = icons.filter { tokens.contains($0.key) }
+        iconOrder = iconOrder.filter { tokens.contains($0) }
+        paths = paths.filter { tokens.contains($0.key) }
+        misses = misses.filter { tokens.contains($0) }
+        inFlight = inFlight.filter { tokens.contains($0) }
     }
 }
 

@@ -6,7 +6,7 @@
 import SwiftUI
 
 struct OutdatedView: View {
-    @ObservedObject var state: AppState
+    var state: AppState
     @State private var selection = Set<Package.ID>()
 
     private var packages: [Package] { state.outdated }
@@ -53,7 +53,8 @@ struct OutdatedView: View {
         }
         .scrollContentBackground(.hidden)
         // 行数据变化时整体重建列表，销毁缓存的滚动目标（见 InstalledView 注释）。
-        .id(packages)
+        // id 用轻量内容版本号替代整个行数组：行内容未变化时跳过重建与 O(n) 哈希。
+        .id(state.outdatedStamp)
         .overlay {
             if state.isLoadingOutdated && packages.isEmpty {
                 VStack(spacing: 12) {

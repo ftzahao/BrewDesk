@@ -93,6 +93,31 @@ actor BrewClient {
         return (try await formulae, try await casks)
     }
 
+    /// 目录行的极简信息（`brew info --json=v2` 无参数即输出全量目录）。
+    /// 全量 JSON 约 50MB / 1.6 万条，若在本进程内解码，启动峰值会吃掉数百 MB
+    /// 内存。这里用管道把输出交给系统自带 ruby（macOS 必带）瘦身成
+    /// name/desc/版本 三个字段，应用内只收到约 1–2MB JSON。
+    /// 若 ruby 管道失败（异常环境），调用方 try? 静默跳过，目录行回退为仅名称。
+    func catalogRows() async throws -> [BrewJSON.CatalogRow] {
+        let install = try requireInstallation()
+        // 脚本只用双引号，保证能被 sh 单引号安全包裹
+        let script = #"require "json";s=STDIN.read;d=JSON.parse(s);f=d["formulae"].map{|x|{"name"=>x["name"],"desc"=>x["desc"],"versions"=>{"stable"=>x.dig("versions","stable")}}};c=d["casks"].map{|x|{"token"=>x["token"],"desc"=>x["desc"],"version"=>x["version"]}};print JSON.generate({"formulae"=>f,"casks"=>c})"#
+        let pipeline = #""$BREW" info --json=v2 | /usr/bin/ruby -e '"# + script + "'"
+        let result = try await runRead(
+            install: install,
+            arguments: ["-c", pipeline],
+            environment: ["BREW": install.executableURL.path]
+        )
+        guard result.exitCode == 0, let data = result.stdout.data(using: .utf8) else {
+            throw BrewError.nonZeroExit(
+                command: "brew info --json=v2 (ruby 瘦身)",
+                code: result.exitCode,
+                stderr: result.stderr
+            )
+        }
+        return try BrewJSON.decodeCatalogRows(data)
+    }
+
     func search(query: String) async throws -> [Package] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
@@ -139,7 +164,7 @@ actor BrewClient {
     /// Fetches analytics data from `brew info` text output.
     private func fetchAnalytics(name: String) async throws -> (install30d: Int?, install90d: Int?, install365d: Int?, installOnRequest30d: Int?, installOnRequest90d: Int?, installOnRequest365d: Int?) {
         let install = try requireInstallation()
-        let result = try await runRead(install: install, arguments: ["info", name], allowNonZero: false)
+        let result = try await runRead(install: install, arguments: ["info", name])
         return AnalyticsParser.parse(result.stdout)
     }
 
@@ -237,7 +262,7 @@ actor BrewClient {
         let install = try requireInstallation()
 
         // Parse installed taps from `brew tap`
-        let result = try await runRead(install: install, arguments: ["tap"], allowNonZero: true)
+        let result = try await runRead(install: install, arguments: ["tap"])
         let lines = result.stdout.split(separator: "\n").map(String.init)
         var tapMap: [String: (name: String, installed: Bool)] = [:]
         for line in lines {
@@ -392,16 +417,6 @@ actor BrewClient {
         )
     }
 
-    /// Dump Brewfile contents to stdout (no file write).
-    func dumpBrewfileText() async throws -> String {
-        let result = try await run(["bundle", "dump", "--file", "-"])
-        let text = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.isEmpty {
-            throw BrewError.invalidJSON("Brewfile 导出结果为空")
-        }
-        return result.stdout
-    }
-
     func installBrewfile(from fileURL: URL, onOutput: @escaping @Sendable (String) -> Void) async throws {
         try await runStreaming(
             ["bundle", "install", "--file", fileURL.path],
@@ -413,8 +428,7 @@ actor BrewClient {
         let install = try requireInstallation()
         let result = try await runRead(
             install: install,
-            arguments: ["bundle", "check", "--file", fileURL.path],
-            allowNonZero: true
+            arguments: ["bundle", "check", "--file", fileURL.path]
         )
         let output = [result.stdout, result.stderr]
             .filter { !$0.isEmpty }
@@ -475,7 +489,7 @@ actor BrewClient {
     /// `brew search` exits 1 when there are no matches — treat that as empty.
     private func runSearchLines(_ arguments: [String]) async throws -> [String] {
         let install = try requireInstallation()
-        let result = try await runRead(install: install, arguments: arguments, allowNonZero: true)
+        let result = try await runRead(install: install, arguments: arguments)
         if result.exitCode != 0 && result.exitCode != 1 {
             let command = (["brew"] + arguments).joined(separator: " ")
             throw BrewError.nonZeroExit(command: command, code: result.exitCode, stderr: result.stderr)
@@ -489,7 +503,7 @@ actor BrewClient {
     /// 解析 `brew formulae` / `brew casks` 这类纯名称列表输出。
     private func runNameList(_ arguments: [String]) async throws -> [String] {
         let install = try requireInstallation()
-        let result = try await runRead(install: install, arguments: arguments, allowNonZero: false)
+        let result = try await runRead(install: install, arguments: arguments)
         if result.exitCode != 0 {
             let command = (["brew"] + arguments).joined(separator: " ")
             throw BrewError.nonZeroExit(
@@ -514,7 +528,7 @@ actor BrewClient {
 
     private func run(_ arguments: [String]) async throws -> BrewCommandResult {
         let install = try requireInstallation()
-        let result = try await runRead(install: install, arguments: arguments, allowNonZero: false)
+        let result = try await runRead(install: install, arguments: arguments)
         if result.exitCode != 0 {
             let command = (["brew"] + arguments).joined(separator: " ")
             throw BrewError.nonZeroExit(
@@ -553,7 +567,7 @@ actor BrewClient {
     private func runRead(
         install: BrewInstallation,
         arguments: [String],
-        allowNonZero: Bool
+        environment: [String: String] = [:]
     ) async throws -> BrewCommandResult {
         let id = UUID()
         let holder = ProcessHolder()
@@ -564,7 +578,9 @@ actor BrewClient {
                 holder.set(process)
                 process.executableURL = install.executableURL
                 process.arguments = arguments
-                process.environment = BrewLocator.brewEnvironment(executable: install.executableURL)
+                var env = BrewLocator.brewEnvironment(executable: install.executableURL)
+                env.merge(environment) { _, new in new }
+                process.environment = env
 
                 let out = Pipe()
                 let err = Pipe()
@@ -608,7 +624,7 @@ actor BrewClient {
                         return
                     }
 
-                    _ = allowNonZero
+                    // 退出码原样返回，由各调用方自行判断（如 `brew search` 无结果时退出码为 1）
                     continuation.resume(returning: BrewCommandResult(
                         exitCode: proc.terminationStatus,
                         stdout: stdout,

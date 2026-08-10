@@ -8,7 +8,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct MaintenanceView: View {
-    @ObservedObject var state: AppState
+    var state: AppState
     @State private var confirmCleanup = false
     @State private var brewfileImporterMode: BrewfileImporterMode?
 
@@ -160,7 +160,7 @@ struct MaintenanceView: View {
         )
     }
 
-    private func exportBrewfileViaPanel() { state.exportBrewfileInteractively() }
+    private func exportBrewfileViaPanel() { BrewfilePanel.presentExport(on: state) }
 
     private func handleBrewfileImport(_ result: Result<[URL], Error>) {
         let mode = brewfileImporterMode

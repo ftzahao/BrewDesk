@@ -309,11 +309,15 @@ struct PackageDetailView: View {
     private var infoSection: some View {
         GroupBox("信息") {
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 10) {
-                gridRow("版本", package.version ?? "—")
+                if let version = package.version, !version.isEmpty {
+                    gridRow("版本", version)
+                } else if let latest = package.latestVersion, !latest.isEmpty {
+                    // 未安装时展示最新稳定版本（brew info 惯例）；
+                    // 此前这里会额外输出一行「版本 —」+「版本 1.2.3」的重复行。
+                    gridRow("版本", latest)
+                }
                 if package.isOutdated {
                     gridRow("最新", package.latestVersion ?? "—")
-                } else if package.version == nil, let latest = package.latestVersion {
-                    gridRow("版本", latest)
                 }
                 if package.installedVersions.count > 1 {
                     gridRow("已装版本", package.installedVersions.joined(separator: ", "))

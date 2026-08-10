@@ -8,47 +8,22 @@
 import SwiftUI
 
 struct HomeCatalogList: View {
-    @ObservedObject var state: AppState
+    @Bindable var state: AppState
     @FocusState.Binding var searchFocused: Bool
     let onUninstall: (Package) -> Void
 
     @State private var localSelection: Package.ID?
-
-    /// 异步绑定工具：避免在视图更新周期内直接修改 @Published 属性（didSet 会同步重建派生数据）
-    private func asyncBinding<T>(_ keyPath: ReferenceWritableKeyPath<AppState, T>) -> Binding<T> {
-        Binding(
-            get: { state[keyPath: keyPath] },
-            set: { newValue in
-                DispatchQueue.main.async {
-                    state[keyPath: keyPath] = newValue
-                }
-            }
-        )
-    }
 
     var body: some View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 filterBar
 
-                List(selection: Binding<Package.ID?>(
-                    get: {
-                        // macOS 26 的 SwiftUI List(selection:) 若持有列表外的 ID，
-                        // 滚动目标回映会触发 NSOutlineView 行数不一致断言而闪退；
-                        // getter 兜底：只把当前列表内存在的选中项交给 List。
-                        guard let id = localSelection,
-                              state.homeFilteredCatalog.contains(where: { $0.id == id }) else { return nil }
-                        return id
-                    },
-                    set: { newValue in
-                        // localSelection 同步提交，让选中变更留在点击事务内，
-                        // 避免延迟事务与行数据刷新竞态触发 List 崩溃。
-                        localSelection = newValue
-                        DispatchQueue.main.async {
-                            state.selectedPackageID = newValue
-                        }
-                    }
-                )) {
+                // 不用 List(selection:)：macOS 的 List 选中引擎会给每行保留 tag/选中结构，
+                // 1.6 万行目录实测额外占用约 100MB（约 7KB/行，裸 List 只有其零头），
+                // 还带 macOS 26 滚动目标回映的行数断言崩溃风险。
+                // 改为行内点击 + 手动高亮，选中交互等价（详情联动、右键菜单、索引跳转不变）。
+                List {
                     ForEach(state.homeFilteredCatalog) { pkg in
                         PackageRowView(
                             package: pkg,
@@ -56,8 +31,17 @@ struct HomeCatalogList: View {
                             showIcon: pkg.isInstalled,
                             showInstalledIndicator: true
                         )
-                            .tag(Optional(pkg.id))
-                            .id(pkg.id)
+                            .contentShape(Rectangle())
+                            .background {
+                                if localSelection == pkg.id {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color.accentColor.opacity(0.14))
+                                }
+                            }
+                            .onTapGesture {
+                                localSelection = pkg.id
+                                state.selectedPackageID = pkg.id
+                            }
                             .contextMenu {
                                 if pkg.isInstalled {
                                     if pkg.isOutdated {
@@ -74,14 +58,20 @@ struct HomeCatalogList: View {
                 }
                 .scrollContentBackground(.hidden)
                 // 行数据变化时整体重建列表，销毁缓存的滚动目标（见 InstalledView 注释）。
-                .id(state.homeFilteredCatalog)
+                // id 用轻量内容版本号而非整个数组：避免每次 body 求值对 1.4 万项哈希，
+                // 也避免无内容变化的发布（如详情加载同步条目）误触发全表重建。
+                .id(state.homeCatalogListStamp)
                 .onChange(of: state.homeKindFilter) { _, _ in
                     scrollToFirst(proxy: proxy)
                 }
                 .onChange(of: state.homeInstalledOnly) { _, _ in
                     scrollToFirst(proxy: proxy)
                 }
-                .onReceive(state.$selectedPackageID) { id in
+                // @Observable 下替代 state.$selectedPackageID 的 onReceive：
+                // task(id:) 在出现时以当前值启动一次、之后每次变化重启一次，语义等价，
+                // 且不再需要 Combine 投影发布器。
+                .task(id: state.selectedPackageID) {
+                    let id = state.selectedPackageID
                     DispatchQueue.main.async {
                         guard localSelection != id else { return }
                         if let id,
@@ -112,7 +102,7 @@ struct HomeCatalogList: View {
                 .onChange(of: state.searchQuery) { _, newValue in
                     let q = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard q.count >= 2 else { return }
-                    state.scheduleSearchAndActivate()
+                    state.scheduleSearch(activateSearchView: true)
                 }
             }
         }
@@ -130,12 +120,12 @@ struct HomeCatalogList: View {
                     ("Formula", Optional.some(.formula)),
                     ("Cask", Optional.some(.cask)),
                 ],
-                selection: asyncBinding(\.homeKindFilter),
+                selection: state.asyncBinding(\.homeKindFilter),
                 idPrefix: "filter.kind"
             )
             .frame(maxWidth: .infinity)
 
-            Toggle("已安装", isOn: asyncBinding(\.homeInstalledOnly))
+            Toggle("已安装", isOn: state.asyncBinding(\.homeInstalledOnly))
                 .toggleStyle(.checkbox)
                 .help("仅显示已安装的软件包")
         }

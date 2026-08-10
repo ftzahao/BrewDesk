@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct HomeDetailPane: View {
-    @ObservedObject var state: AppState
+    var state: AppState
     let onUninstall: (Package) -> Void
 
     @State private var isLoadingDetail = false

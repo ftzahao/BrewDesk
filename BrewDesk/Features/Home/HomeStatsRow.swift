@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct HomeStatsRow: View {
-    @ObservedObject var state: AppState
+    var state: AppState
 
     var body: some View {
         HStack(spacing: 12) {

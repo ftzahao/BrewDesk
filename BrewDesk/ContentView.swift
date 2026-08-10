@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject private var state: AppState
+    @Environment(AppState.self) private var state
     @Namespace private var glassNamespace
 
     var body: some View {

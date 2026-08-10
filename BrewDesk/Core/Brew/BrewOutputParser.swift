@@ -1,6 +1,9 @@
 //
-//  DoctorParser.swift
+//  BrewOutputParser.swift
 //  BrewDesk
+//
+//  解析 brew 子进程文本/JSON 输出的各类解析器：
+//  CleanupParser / ServicesJSON / ServiceInfoRow / AnalyticsParser。
 //
 
 import Foundation

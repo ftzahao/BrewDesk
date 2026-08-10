@@ -564,4 +564,50 @@ nonisolated enum BrewJSON {
             throw BrewError.invalidJSON(error.localizedDescription)
         }
     }
+
+    // MARK: - 目录行瘦解码
+
+    /// 目录列表行（约 1.6 万条）需要的极简字段。
+    /// 这是全量 `brew info --json=v2` 的内存敏感路径：只解出行内要展示的
+    /// desc 与最新版本，详情（依赖/caveats/analytics 等）由 catalogDetail(for:)
+    /// 按需拉取并缓存，避免在目录里长期持有 1.6 万个完整 Package。
+    struct CatalogRow: Decodable, Sendable {
+        let id: String
+        let desc: String?
+        let latestVersion: String?
+
+        struct Root: Decodable {
+            let formulae: [FormulaRow]
+            let casks: [CaskRow]
+        }
+
+        struct FormulaRow: Decodable {
+            let name: String
+            let desc: String?
+            let versions: Versions?
+
+            struct Versions: Decodable {
+                let stable: String?
+            }
+        }
+
+        struct CaskRow: Decodable {
+            let token: String
+            let desc: String?
+            let version: String?
+        }
+    }
+
+    static func decodeCatalogRows(_ data: Data) throws -> [CatalogRow] {
+        do {
+            let root = try JSONDecoder().decode(CatalogRow.Root.self, from: data)
+            return root.formulae.map {
+                CatalogRow(id: "formula:\($0.name)", desc: $0.desc, latestVersion: $0.versions?.stable)
+            } + root.casks.map {
+                CatalogRow(id: "cask:\($0.token)", desc: $0.desc, latestVersion: $0.version)
+            }
+        } catch {
+            throw BrewError.invalidJSON(error.localizedDescription)
+        }
+    }
 }

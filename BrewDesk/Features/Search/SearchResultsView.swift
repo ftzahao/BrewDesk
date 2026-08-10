@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct SearchResultsView: View {
-    @ObservedObject var state: AppState
+    @Bindable var state: AppState
     @State private var pendingUninstall: Package?
     @FocusState private var searchFocused: Bool
     /// 本地选中 ID：避免直接在视图更新周期内修改 @Published 属性
@@ -123,8 +123,12 @@ struct SearchResultsView: View {
             }
             .scrollContentBackground(.hidden)
             // 行数据变化时整体重建列表，销毁缓存的滚动目标（见 InstalledView 注释）。
-            .id(state.searchResults)
-            .onReceive(state.$selectedPackageID) { id in
+            // id 用轻量内容版本号替代整个行数组：行内容未变化时跳过重建与 O(n) 哈希。
+            .id(state.searchStamp)
+            // @Observable 下替代 state.$selectedPackageID 的 onReceive：
+            // task(id:) 在出现时以当前值启动一次、之后每次变化重启一次，语义等价。
+            .task(id: state.selectedPackageID) {
+                let id = state.selectedPackageID
                 DispatchQueue.main.async {
                     guard localSelection != id else { return }
                     if let id, state.searchResults.contains(where: { $0.id == id }) {

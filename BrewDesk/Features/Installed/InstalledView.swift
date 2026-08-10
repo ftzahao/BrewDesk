@@ -7,23 +7,11 @@ import AppKit
 import SwiftUI
 
 struct InstalledView: View {
-    @ObservedObject var state: AppState
+    var state: AppState
     @State private var listFilter = ""
     @State private var pendingUninstall: Package?
     /// 本地选中 ID：避免直接在视图更新周期内修改 @Published 属性
     @State private var localSelection: Package.ID?
-
-    /// 异步绑定工具：避免在视图更新周期内直接修改 @Published 属性
-    private func asyncBinding<T>(_ keyPath: ReferenceWritableKeyPath<AppState, T>) -> Binding<T> {
-        Binding(
-            get: { state[keyPath: keyPath] },
-            set: { newValue in
-                DispatchQueue.main.async {
-                    state[keyPath: keyPath] = newValue
-                }
-            }
-        )
-    }
 
     private var packages: [Package] {
         let base = state.filteredInstalled
@@ -33,6 +21,22 @@ struct InstalledView: View {
             $0.name.localizedCaseInsensitiveContains(q)
                 || ($0.desc?.localizedCaseInsensitiveContains(q) ?? false)
         }
+    }
+
+    /// 轻量列表 stamp：仅当行数据来源（过滤结果缓存 / 过滤词）变化时变化，
+    /// 触发 List 重建以销毁缓存的滚动目标（macOS 26 崩溃规避），
+    /// 替代对整行数组做 O(n) 哈希的 `.id(packages)`。
+    /// 类型/仅手动筛选已折叠进 installedFilterStamp（AppState 内过滤缓存重建时递增）。
+    private var listStamp: ListStamp {
+        ListStamp(
+            dataVersion: state.installedFilterStamp,
+            filterText: listFilter
+        )
+    }
+
+    private struct ListStamp: Hashable {
+        let dataVersion: Int
+        let filterText: String
     }
 
     var body: some View {
@@ -102,8 +106,13 @@ struct InstalledView: View {
         // 变化后，reflectScrollTarget 用缓存目标算行号会越过 NSOutlineView 行数，
         // 触发 ViewListTree.visitItem 断言闪退。用 .id(行数据) 让行变化时整体重建列表，
         // 旧列表（含缓存目标）随重建销毁，新列表从修剪过的 binding 初始化，杜绝该窗口。
-        .id(packages)
-        .onReceive(state.$selectedPackageID) { id in
+        // id 用轻量 stamp（数据版本 + 筛选条件 + 过滤词）而非整个行数组：
+        // 语义与 .id(packages) 一致（行变化才重建），但每次 body 求值只需哈希 4 个小值。
+        .id(listStamp)
+        // @Observable 下替代 state.$selectedPackageID 的 onReceive：
+        // task(id:) 在出现时以当前值启动一次、之后每次变化重启一次，语义等价。
+        .task(id: state.selectedPackageID) {
+            let id = state.selectedPackageID
             DispatchQueue.main.async {
                 guard localSelection != id else { return }
                 if let id, packages.contains(where: { $0.id == id }) {
@@ -123,12 +132,12 @@ struct InstalledView: View {
         .searchable(text: $listFilter, prompt: "过滤已安装")
         .toolbar {
             ToolbarItemGroup {
-                Picker("类型", selection: asyncBinding(\.kindFilter)) {
+                Picker("类型", selection: state.asyncBinding(\.kindFilter)) {
                     Text("全部").tag(Optional<PackageKind>.none)
                     Text("Formula").tag(Optional.some(PackageKind.formula))
                     Text("Cask").tag(Optional.some(PackageKind.cask))
                 }.pickerStyle(.segmented).frame(width: 200)
-                Toggle("仅手动安装", isOn: asyncBinding(\.showOnlyRequested))
+                Toggle("仅手动安装", isOn: state.asyncBinding(\.showOnlyRequested))
                     .toggleStyle(.checkbox)
                     .help("隐藏作为依赖被拉起的 formula")
                     .padding(.horizontal, 12)
@@ -175,9 +184,12 @@ struct InstalledView: View {
 
     private var detailColumn: some View {
         Group {
-            if let package = state.selectedPackage,
-               packages.contains(where: { $0.id == package.id })
-                    || state.installed.contains(where: { $0.id == package.id }) {
+            // 只在「当前显示列表」和「已安装全量」中查找：与旧逻辑
+            // （selectedPackage 三数组回退 + 两次 contains）语义等价，
+            // 但把最多 5 次线性扫描降到 2 次，且不再在已安装页误读搜索结果。
+            if let id = state.selectedPackageID,
+               let package = packages.first(where: { $0.id == id })
+                    ?? state.installed.first(where: { $0.id == id }) {
                 PackageDetailView(
                     package: package,
                     dependents: state.dependents(of: package),

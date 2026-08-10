@@ -6,7 +6,7 @@
 import SwiftUI
 
 struct TapsView: View {
-    @ObservedObject var state: AppState
+    var state: AppState
     @State private var showAddTap = false
     @State private var newTapName = ""
     @State private var pendingRemove: BrewTap?
@@ -268,7 +268,7 @@ private struct TapRow: View {
 
 private struct TapDetailView: View {
     let tap: BrewTap
-    @ObservedObject var state: AppState
+    var state: AppState
     var isLoading: Bool
     var onTapPackage: (String) -> Void
     var onInstall: (Package) -> Void
@@ -537,7 +537,7 @@ private struct TapDetailView: View {
 
 private struct PackageSheet: View {
     let package: Package
-    @ObservedObject var state: AppState
+    var state: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var loaded: Package?
 

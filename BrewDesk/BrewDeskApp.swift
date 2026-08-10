@@ -10,14 +10,14 @@ import SwiftUI
 
 @main
 struct BrewDeskApp: App {
-    @StateObject private var appState = AppState()
+    @State private var appState = AppState()
     @StateObject private var updaterController = UpdaterController()
     @State private var showAbout = false
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(appState)
+                .environment(appState)
                 .environmentObject(updaterController)
                 .task {
                     appState.updater = updaterController
@@ -48,7 +48,10 @@ struct BrewDeskApp: App {
                     Task { await appState.loadCleanupPreview() }
                 }.disabled(appState.installation == nil)
                 Divider()
-                Button("导出 Brewfile…") { appState.exportBrewfileInteractively() }
+                Button("导出 Brewfile…") {
+                    appState.selectedSidebar = .maintenance
+                    BrewfilePanel.presentExport(on: appState)
+                }
                     .disabled(appState.isTaskRunning || appState.installation == nil)
             }
             CommandGroup(after: .appInfo) {

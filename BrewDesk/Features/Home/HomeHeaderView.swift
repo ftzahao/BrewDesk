@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct HomeHeaderView: View {
-    @ObservedObject var state: AppState
+    var state: AppState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

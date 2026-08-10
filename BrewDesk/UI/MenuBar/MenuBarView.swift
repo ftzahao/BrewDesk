@@ -7,7 +7,10 @@ import AppKit
 import SwiftUI
 
 struct MenuBarLabelView: View {
-    @ObservedObject var state: AppState
+    /// @Observable 细粒度观察：body 只读 outdated 与 installation，
+    /// 其他属性（任务输出流、搜索输入等）变化不会使 label 失效。
+    /// （此前 ObservableObject 时代需要 MenuBarLabelModel 窄化投影，已随 M1 移除。）
+    var state: AppState
 
     var body: some View {
         HStack(spacing: 4) {
@@ -24,7 +27,7 @@ struct MenuBarLabelView: View {
 }
 
 struct MenuBarMenuContent: View {
-    @ObservedObject var state: AppState
+    var state: AppState
 
     var body: some View {
         if state.installation == nil {

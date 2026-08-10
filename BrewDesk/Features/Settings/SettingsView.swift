@@ -8,19 +8,8 @@ import Sparkle
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var state: AppState
+    @Bindable var state: AppState
     @State private var showAbout = false
-    /// 异步绑定工具：避免在视图更新周期内直接修改 @Published 属性
-    private func asyncBinding<T>(_ keyPath: ReferenceWritableKeyPath<AppState, T>) -> Binding<T> {
-        Binding(
-            get: { state[keyPath: keyPath] },
-            set: { newValue in
-                DispatchQueue.main.async {
-                    state[keyPath: keyPath] = newValue
-                }
-            }
-        )
-    }
 
     private var appVersion: String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"]  as? String ?? "?"
@@ -63,7 +52,7 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle("默认仅显示手动安装的 formula", isOn: asyncBinding(\.showOnlyRequested))
+                    Toggle("默认仅显示手动安装的 formula", isOn: state.asyncBinding(\.showOnlyRequested))
                         .help("作为依赖安装的 formula 默认隐藏，可在已安装页随时切换")
                 } header: {
                     Label("列表", systemImage: "list.bullet")
@@ -73,7 +62,7 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle("任务完成时发送系统通知", isOn: asyncBinding(\.notificationsEnabled))
+                    Toggle("任务完成时发送系统通知", isOn: state.asyncBinding(\.notificationsEnabled))
                         .onChange(of: state.notificationsEnabled) { _, enabled in
                             guard enabled else { return }
                             NotificationService.requestAuthorizationIfNeeded()
@@ -86,11 +75,11 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle("自动检查更新", isOn: asyncBinding(\.autoCheckForUpdates))
+                    Toggle("自动检查更新", isOn: state.asyncBinding(\.autoCheckForUpdates))
                         .onChange(of: state.autoCheckForUpdates) { _, enabled in
                             state.updater?.updater.automaticallyChecksForUpdates = enabled
                         }
-                    Toggle("自动下载更新", isOn: asyncBinding(\.autoDownloadUpdates))
+                    Toggle("自动下载更新", isOn: state.asyncBinding(\.autoDownloadUpdates))
                         .onChange(of: state.autoDownloadUpdates) { _, enabled in
                             state.updater?.updater.automaticallyDownloadsUpdates = enabled
                         }
@@ -109,7 +98,7 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Picker("主题", selection: asyncBinding(\.appearanceMode)) {
+                    Picker("主题", selection: state.asyncBinding(\.appearanceMode)) {
                         ForEach(AppState.AppearanceMode.allCases, id: \.self) { mode in
                             Text(mode.title).tag(mode)
                         }

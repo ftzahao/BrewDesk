@@ -4,11 +4,8 @@
 //
 
 import AppKit
-import Combine
 import Foundation
-import Sparkle
 import SwiftUI
-import UniformTypeIdentifiers
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
     case home
@@ -81,62 +78,66 @@ enum TaskKind: String, Sendable {
 }
 
 @MainActor
-final class AppState: ObservableObject {
+@Observable
+final class AppState {
     let client = BrewClient()
 
-    @Published var installation: BrewInstallation?
-    @Published var selectedSidebar: SidebarItem = .home
-    @Published var selectedPackageID: Package.ID?
-    @Published var selectedServiceID: BrewService.ID?
+    var installation: BrewInstallation?
+    var selectedSidebar: SidebarItem = .home
+    var selectedPackageID: Package.ID?
+    var selectedServiceID: BrewService.ID?
 
-    @Published var installed: [Package] = []
-    @Published var outdated: [Package] = []
+    var installed: [Package] = []
+    var outdated: [Package] = []
     /// 全部可安装包目录（轻量：名称 + 类型 + 已安装状态合并），详情按需加载
-    @Published var catalog: [Package] = []
+    var catalog: [Package] = []
     /// 主页详情缓存：按包 id 缓存拉取到的完整信息
-    @Published var catalogDetailCache: [Package.ID: Package] = [:]
-    @Published var searchResults: [Package] = []
-    @Published var searchQuery: String = ""
+    var catalogDetailCache: [Package.ID: Package] = [:]
+    var searchResults: [Package] = []
+    var searchQuery: String = ""
     /// 是否处于搜索结果视图（由主页搜索框激活）
-    @Published var isSearchActive = false
-    @Published var services: [BrewService] = []
-    @Published var taps: [BrewTap] = []
-    @Published var selectedTapID: String?
+    var isSearchActive = false
+    var services: [BrewService] = []
+    var taps: [BrewTap] = []
+    var selectedTapID: String?
 
-    @Published var cleanupPreview: CleanupPreview?
+    var cleanupPreview: CleanupPreview?
 
-    @Published var isLoadingInstalled = false
-    @Published var isLoadingOutdated = false
-    @Published var isLoadingCatalog = false
-    @Published var isSearching = false
-    @Published var isLoadingServices = false
-    @Published var isLoadingTaps = false
-    @Published var isLoadingTapPackages = false
-    @Published var isLoadingCleanupPreview = false
+    var isLoadingInstalled = false
+    var isLoadingOutdated = false
+    var isLoadingCatalog = false
+    var isSearching = false
+    var isLoadingServices = false
+    var isLoadingTaps = false
+    var isLoadingTapPackages = false
+    var isLoadingCleanupPreview = false
 
-    @Published var isTaskRunning = false
-    @Published var currentTaskTitle: String?
+    var isTaskRunning = false
+    var currentTaskTitle: String?
 
-    @Published var lastError: String?
-    @Published var lastStatus: String?
+    var lastError: String?
+    var lastStatus: String?
 
-    @Published var customBrewPath: String = UserDefaults.standard.string(forKey: "customBrewPath") ?? "" {
+    var customBrewPath: String = UserDefaults.standard.string(forKey: "customBrewPath") ?? "" {
         didSet { UserDefaults.standard.set(customBrewPath, forKey: "customBrewPath") }
     }
 
-    @Published var showOnlyRequested: Bool = UserDefaults.standard.object(forKey: "showOnlyRequested") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(showOnlyRequested, forKey: "showOnlyRequested") }
+    var showOnlyRequested: Bool = UserDefaults.standard.object(forKey: "showOnlyRequested") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(showOnlyRequested, forKey: "showOnlyRequested")
+            rebuildFilteredInstalled()
+        }
     }
 
-    @Published var notificationsEnabled: Bool = UserDefaults.standard.object(forKey: "notificationsEnabled") as? Bool ?? true {
+    var notificationsEnabled: Bool = UserDefaults.standard.object(forKey: "notificationsEnabled") as? Bool ?? true {
         didSet { UserDefaults.standard.set(notificationsEnabled, forKey: "notificationsEnabled") }
     }
 
-    @Published var autoCheckForUpdates: Bool = UserDefaults.standard.object(forKey: "autoCheckForUpdates") as? Bool ?? true {
+    var autoCheckForUpdates: Bool = UserDefaults.standard.object(forKey: "autoCheckForUpdates") as? Bool ?? true {
         didSet { UserDefaults.standard.set(autoCheckForUpdates, forKey: "autoCheckForUpdates") }
     }
 
-    @Published var autoDownloadUpdates: Bool = UserDefaults.standard.object(forKey: "autoDownloadUpdates") as? Bool ?? true {
+    var autoDownloadUpdates: Bool = UserDefaults.standard.object(forKey: "autoDownloadUpdates") as? Bool ?? true {
         didSet { UserDefaults.standard.set(autoDownloadUpdates, forKey: "autoDownloadUpdates") }
     }
 
@@ -165,7 +166,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    @Published var appearanceMode: AppearanceMode = AppearanceMode(rawValue: UserDefaults.standard.string(forKey: "appearanceMode") ?? "") ?? .system {
+    var appearanceMode: AppearanceMode = AppearanceMode(rawValue: UserDefaults.standard.string(forKey: "appearanceMode") ?? "") ?? .system {
         didSet {
             UserDefaults.standard.set(appearanceMode.rawValue, forKey: "appearanceMode")
             applyAppearance()
@@ -180,27 +181,28 @@ final class AppState: ObservableObject {
         }
     }
 
-    @Published var kindFilter: PackageKind? = nil
-    @Published var showPinnedOnly: Bool = false
+    var kindFilter: PackageKind? = nil {
+        didSet { rebuildFilteredInstalled() }
+    }
 
     /// 主页目录过滤状态（提升到 AppState，便于集中做派生数据缓存）
-    @Published var homeKindFilter: PackageKind? = nil {
+    var homeKindFilter: PackageKind? = nil {
         didSet { scheduleCatalogDerivedRebuild() }
     }
-    @Published var homeInstalledOnly: Bool = false {
+    var homeInstalledOnly: Bool = false {
         didSet { scheduleCatalogDerivedRebuild() }
     }
 
     /// 主页目录派生数据缓存：避免视图每帧对整个目录做全量过滤/统计
-    @Published private(set) var homeFilteredCatalog: [Package] = []
-    @Published private(set) var homeCatalogIndex: [Package.ID: Int] = [:]
-    @Published private(set) var homeIndexLetters: [String] = []
-    @Published private(set) var catalogInstalledCount = 0
-    @Published private(set) var catalogFormulaCount = 0
-    @Published private(set) var catalogCaskCount = 0
+    private(set) var homeFilteredCatalog: [Package] = []
+    private(set) var homeCatalogIndex: [Package.ID: Int] = [:]
+    private(set) var homeIndexLetters: [String] = []
+    private(set) var catalogInstalledCount = 0
+    private(set) var catalogFormulaCount = 0
+    private(set) var catalogCaskCount = 0
 
-    @Published var brewfileCheckResult: String?
-    @Published var brewfileCheckOK: Bool?
+    var brewfileCheckResult: String?
+    var brewfileCheckOK: Bool?
 
     private var statusClearTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
@@ -224,8 +226,15 @@ final class AppState: ObservableObject {
     private static let maxCatalogDetailCacheSize = 200
     private var catalogDetailOrder: [Package.ID] = []
 
-    var filteredInstalled: [Package] {
-        installed.filter { pkg in
+    /// 已安装列表过滤结果缓存：installed / showOnlyRequested / kindFilter 变化时重建，
+    /// 避免视图每次 body 求值对已安装列表做全量过滤（仿 homeFilteredCatalog 模式）。
+    private(set) var filteredInstalled: [Package] = []
+    /// 过滤结果版本号：仅过滤结果内容实际变化时 +1（列表 .id 用，
+    /// 已安装数据变化与筛选条件变化都折叠进来）。
+    private(set) var installedFilterStamp = 0
+
+    private func rebuildFilteredInstalled() {
+        let base = installed.filter { pkg in
             if showOnlyRequested && pkg.kind == .formula && !pkg.installedOnRequest {
                 return false
             }
@@ -234,13 +243,10 @@ final class AppState: ObservableObject {
             }
             return true
         }
-    }
-
-    var selectedPackage: Package? {
-        guard let selectedPackageID else { return nil }
-        return installed.first { $0.id == selectedPackageID }
-            ?? outdated.first { $0.id == selectedPackageID }
-            ?? searchResults.first { $0.id == selectedPackageID }
+        if base != filteredInstalled {
+            filteredInstalled = base
+            installedFilterStamp += 1
+        }
     }
 
     var selectedService: BrewService? {
@@ -258,7 +264,7 @@ final class AppState: ObservableObject {
     }
 
     /// 已安装包名集合（在 loadInstalled 时一次性构建，避免视图反复创建）
-    @Published private(set) var installedNameSet: Set<String> = []
+    private(set) var installedNameSet: Set<String> = []
 
     /// 依赖反转索引：依赖名 → 依赖它的已安装 formula 名（loadInstalled 时重建，
     /// 避免 dependents(of:) 在 5 个视图 body 里反复做 O(已装数 × 依赖数) 扫描）
@@ -397,18 +403,24 @@ final class AppState: ObservableObject {
         isLoadingInstalled = true
         defer { isLoadingInstalled = false }
         do {
-            installed = try await client.installedPackages()
+            let newInstalled = try await client.installedPackages()
             installedGen += 1
-            installedNameSet = Set(installed.map(\.name))
-            rebuildDependentsIndex()
-            // 安装状态可能已变化：仅当已安装 cask 集合真的变化时才清空图标缓存，
-            // 避免每次刷新都重新扫描磁盘。
-            let caskTokens = Set(installed.filter { $0.kind == .cask }.map(\.name))
-            if caskTokens != lastInstalledCaskTokens {
-                CaskIconCache.shared.invalidate()
-                lastInstalledCaskTokens = caskTokens
+            // 仅内容实际变化时发布：无变化刷新不重建列表、不刷新依赖视图。
+            if newInstalled != installed {
+                installed = newInstalled
+                installedNameSet = Set(installed.map(\.name))
+                rebuildDependentsIndex()
+                // 安装状态可能已变化：仅当已安装 cask 集合真的变化时才清理图标缓存，
+                // 且只清除已卸载的 token——仍安装的 cask 图标/路径/miss 全部保留，
+                // 避免装一个 cask 后刷新就重扫磁盘并重绘全部图标。
+                let caskTokens = Set(installed.filter { $0.kind == .cask }.map(\.name))
+                if caskTokens != lastInstalledCaskTokens {
+                    CaskIconCache.shared.invalidate(keeping: caskTokens)
+                    lastInstalledCaskTokens = caskTokens
+                }
             }
-            enrichOutdatedWithInstalledInfo()
+            setOutdated(Self.enrichOutdated(outdated, with: installed))
+            rebuildFilteredInstalled()
             enrichCatalogWithInstalledInfo()
             lastError = nil
             installedLoadedAt = Date()
@@ -435,9 +447,9 @@ final class AppState: ObservableObject {
         isLoadingOutdated = true
         defer { isLoadingOutdated = false }
         do {
-            outdated = try await client.outdatedPackages()
+            let result = try await client.outdatedPackages()
             outdatedGen += 1
-            enrichOutdatedWithInstalledInfo()
+            setOutdated(Self.enrichOutdated(result, with: installed))
             enrichCatalogWithInstalledInfo()
             lastError = nil
             outdatedLoadedAt = Date()
@@ -501,8 +513,52 @@ final class AppState: ObservableObject {
             enrichCatalogWithInstalledInfo()
             lastError = nil
             catalogLoadedAt = Date()
+            // 名称目录先渲染；随后后台拉取全量 info 补齐版本/描述等字段，
+            // 让目录行默认完整展示（无需点击详情后才回填）。
+            enrichCatalogFullInfoInBackground()
         } catch is CancellationError {} catch {
             lastError = error.localizedDescription
+        }
+    }
+
+    /// 后台富化目录行字段：一次 `brew info --json=v2`（无参数即全量）取回全部包的
+    /// 极简信息，按 id（kind:name）只合并 desc/最新版本两个字段，保持排序与结构。
+    /// 详情（依赖/caveats/analytics 等）由 catalogDetail(for:) 按需拉取并 LRU 缓存，
+    /// 目录本身不持有——1.6 万行若存完整 Package 会吃掉数百 MB 内存。
+    /// brew 调用在 BrewClient actor 上执行（含 JSON 解码），主线程只做轻量合并。
+    private func enrichCatalogFullInfoInBackground() {
+        Task { [weak self] in
+            guard let self else { return }
+            guard let rows = try? await self.client.catalogRows() else { return }
+            let byId = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            var newCatalog = self.catalog
+            var changed = false
+            for idx in newCatalog.indices {
+                guard let row = byId[newCatalog[idx].id] else { continue }
+                var pkg = newCatalog[idx]
+                var dirty = false
+                if row.desc != pkg.desc {
+                    pkg.desc = row.desc
+                    dirty = true
+                }
+                if row.latestVersion != pkg.latestVersion {
+                    pkg.latestVersion = row.latestVersion
+                    dirty = true
+                }
+                if dirty {
+                    newCatalog[idx] = pkg
+                    changed = true
+                }
+            }
+            if changed {
+                self.catalog = newCatalog
+                self.catalogGen += 1
+                // 用已安装数据重新叠加安装状态（快照中的安装字段以本机当前数据为准）
+                self.enrichCatalogWithInstalledInfo()
+            }
+            // 全量 dump 的 JSON 缓冲区（约 50MB）与解码临时对象已释放，但 malloc 默认
+            // 不把空闲页归还 OS，显式让出，避免 RSS 长期停留在解码峰值。
+            malloc_zone_pressure_relief(malloc_default_zone(), 0)
         }
     }
 
@@ -512,6 +568,17 @@ final class AppState: ObservableObject {
     private var outdatedGen = 0
     private var catalogGen = 0
     private var lastEnrichGens: (Int, Int, Int)?
+
+    // MARK: - 列表内容版本号（用作列表 .id 的轻量 stamp）
+
+    /// 列表内容版本号：仅在对应数据内容实际变化时 +1。
+    /// 用作各列表 `.id(stamp)` 的轻量标识，替代 `.id(整个数组)`
+    /// （每次 body 求值 O(n) 哈希 + 无内容变化的发布也触发全表重建）。
+    private(set) var outdatedStamp = 0
+    private(set) var searchStamp = 0
+    private(set) var servicesStamp = 0
+    /// 主页目录过滤结果版本号：仅在实际内容变化时 +1（重建写回与详情同步时）。
+    private(set) var homeCatalogListStamp = 0
 
     /// 用已安装/可更新列表补全目录的安装状态与版本信息。
     private func enrichCatalogWithInstalledInfo() {
@@ -588,8 +655,11 @@ final class AppState: ObservableObject {
 
     /// outdated 列表来自 `brew outdated --json`，不含 cask 的 artifacts 信息；
     /// 用已安装列表中的权威 app 信息补全，保证“可更新”页也能显示真实图标。
-    private func enrichOutdatedWithInstalledInfo() {
-        guard !installed.isEmpty, !outdated.isEmpty else { return }
+    /// 纯函数形式：先计算完整结果，再按内容差异写回（无变化不发布、不重建列表）。
+    nonisolated static func enrichOutdated(
+        _ outdated: [Package], with installed: [Package]
+    ) -> [Package] {
+        guard !installed.isEmpty, !outdated.isEmpty else { return outdated }
 
         let installedByToken = Dictionary(
             installed
@@ -597,14 +667,22 @@ final class AppState: ObservableObject {
                 .map { ($0.name, $0) },
             uniquingKeysWith: { first, _ in first }
         )
-        guard !installedByToken.isEmpty else { return }
+        guard !installedByToken.isEmpty else { return outdated }
 
-        outdated = outdated.map { pkg in
+        return outdated.map { pkg in
             guard let installedPkg = installedByToken[pkg.name] else { return pkg }
             var copy = pkg
             copy.caskArtifacts = installedPkg.caskArtifacts
             copy.caskDisplayNames = installedPkg.caskDisplayNames
             return copy
+        }
+    }
+
+    /// 写回 outdated，仅内容实际变化时发布并递增列表 stamp。
+    private func setOutdated(_ newValue: [Package]) {
+        if newValue != outdated {
+            outdated = newValue
+            outdatedStamp += 1
         }
     }
 
@@ -626,7 +704,11 @@ final class AppState: ObservableObject {
         isLoadingServices = true
         defer { isLoadingServices = false }
         do {
-            services = try await client.listServices()
+            let result = try await client.listServices()
+            if result != services {
+                services = result
+                servicesStamp += 1
+            }
             lastError = nil
             servicesLoadedAt = Date()
         } catch is CancellationError {} catch {
@@ -733,7 +815,11 @@ final class AppState: ObservableObject {
         isSearching = true
         defer { isSearching = false }
         do {
-            searchResults = try await client.search(query: q)
+            let result = try await client.search(query: q)
+            if result != searchResults {
+                searchResults = result
+                searchStamp += 1
+            }
             lastError = nil
             if searchResults.isEmpty {
                 showStatus("未找到与「\(q)」匹配的软件包")
@@ -757,31 +843,32 @@ final class AppState: ObservableObject {
         searchTask?.cancel()
         isSearchActive = false
         searchQuery = ""
-        searchResults = []
-    }
-
-    /// 主页搜索框输入时：防抖后激活搜索结果视图并执行搜索。
-    func scheduleSearchAndActivate(delayNanoseconds: UInt64 = 450_000_000) {
-        searchTask?.cancel()
-        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return }
-        guard q.count >= 2 else { return }
-        searchTask = Task {
-            try? await Task.sleep(nanoseconds: delayNanoseconds)
-            guard !Task.isCancelled else { return }
-            isSearchActive = true
-            await runSearch()
+        if !searchResults.isEmpty {
+            searchResults = []
+            searchStamp += 1
         }
     }
 
-    func scheduleSearch(delayNanoseconds: UInt64 = 450_000_000) {
+    /// 搜索防抖：输入停止 450ms 后执行搜索。
+    /// - Parameter activateSearchView: 主页搜索框传 true——防抖结束后激活搜索结果视图再搜索；
+    ///   搜索结果页自身的输入框传 false（视图已激活，只执行搜索）。
+    func scheduleSearch(delayNanoseconds: UInt64 = 450_000_000, activateSearchView: Bool = false) {
         searchTask?.cancel()
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { searchResults = []; return }
+        guard !q.isEmpty else {
+            // 清空输入：清空结果并递增 stamp 触发列表重建——若行数变化而不重建，
+            // List 会持有失效的滚动目标（macOS 26 回映断言崩溃，见 InstalledView 注释）。
+            if !activateSearchView && !searchResults.isEmpty {
+                searchResults = []
+                searchStamp += 1
+            }
+            return
+        }
         guard q.count >= 2 else { return }
         searchTask = Task {
             try? await Task.sleep(nanoseconds: delayNanoseconds)
             guard !Task.isCancelled else { return }
+            if activateSearchView { isSearchActive = true }
             await runSearch()
         }
     }
@@ -914,19 +1001,6 @@ final class AppState: ObservableObject {
     func exportBrewfile(to fileURL: URL) async {
         await runTask(kind: .bundle, title: "导出 Brewfile") {
             try await self.client.dumpBrewfile(to: fileURL) { _ in }
-        }
-    }
-
-    func exportBrewfileInteractively() {
-        selectedSidebar = .maintenance
-        let panel = NSSavePanel()
-        panel.canCreateDirectories = true
-        panel.title = "导出 Brewfile"
-        panel.nameFieldStringValue = "Brewfile"
-        panel.allowedContentTypes = [UTType.plainText, UTType.data]
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            Task { @MainActor in await self.exportBrewfile(to: url) }
         }
     }
 
@@ -1076,12 +1150,23 @@ final class AppState: ObservableObject {
             )
             await MainActor.run {
                 guard self.derivedGeneration == generation else { return }
-                self.homeFilteredCatalog = result.filtered
-                self.homeCatalogIndex = result.index
-                self.homeIndexLetters = result.letters
-                self.catalogInstalledCount = result.installedCount
-                self.catalogFormulaCount = result.formulaCount
-                self.catalogCaskCount = result.caskCount
+                // 过滤结果无变化时跳过写回：不发布、不重建列表。
+                // 统计基于完整目录（可能与过滤结果不同步变化），独立按值写回。
+                if result.filtered != self.homeFilteredCatalog {
+                    self.homeFilteredCatalog = result.filtered
+                    self.homeCatalogIndex = result.index
+                    self.homeIndexLetters = result.letters
+                    self.homeCatalogListStamp += 1
+                }
+                if result.installedCount != self.catalogInstalledCount {
+                    self.catalogInstalledCount = result.installedCount
+                }
+                if result.formulaCount != self.catalogFormulaCount {
+                    self.catalogFormulaCount = result.formulaCount
+                }
+                if result.caskCount != self.catalogCaskCount {
+                    self.catalogCaskCount = result.caskCount
+                }
             }
         }
     }
@@ -1154,12 +1239,35 @@ final class AppState: ObservableObject {
     private func syncCatalogEntry(_ package: Package) {
         // 使在途的派生重建结果作废，避免其写回回滚刚同步的条目
         derivedGeneration += 1
-        if let idx = catalog.firstIndex(where: { $0.id == package.id }) {
+        // 逐处按内容差异写回：无变化不发布、不递增列表 stamp。
+        // 之前每次详情加载（catalogDetail）都会无条件更新目录条目，
+        // 触发整个 1.4 万行列表的重建——浏览目录时点一个包就闪一次。
+        if let idx = catalog.firstIndex(where: { $0.id == package.id }),
+           catalog[idx] != package {
             catalog[idx] = package
         }
         if let homeIdx = homeCatalogIndex[package.id],
-           homeIdx < homeFilteredCatalog.count {
+           homeIdx < homeFilteredCatalog.count,
+           homeFilteredCatalog[homeIdx] != package {
             homeFilteredCatalog[homeIdx] = package
+            homeCatalogListStamp += 1
         }
+    }
+}
+
+// MARK: - 视图绑定工具
+
+extension AppState {
+    /// 异步绑定工具：避免在视图更新周期内直接修改 属性
+    /// （didSet 会同步重建派生数据的属性尤其需要）。跨视图共用一份实现。
+    func asyncBinding<T>(_ keyPath: ReferenceWritableKeyPath<AppState, T>) -> Binding<T> {
+        Binding(
+            get: { self[keyPath: keyPath] },
+            set: { newValue in
+                DispatchQueue.main.async {
+                    self[keyPath: keyPath] = newValue
+                }
+            }
+        )
     }
 }

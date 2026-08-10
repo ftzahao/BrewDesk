@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct HomeQuickActions: View {
-    @ObservedObject var state: AppState
+    var state: AppState
     @State private var hoveredItem: SidebarItem?
 
     var body: some View {

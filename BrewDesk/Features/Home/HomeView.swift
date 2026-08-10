@@ -10,7 +10,7 @@
 import SwiftUI
 
 struct HomeView: View {
-    @ObservedObject var state: AppState
+    var state: AppState
     @State private var pendingUninstall: Package?
     @FocusState private var searchFocused: Bool
 

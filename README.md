@@ -13,7 +13,8 @@
 - **设置** — 自定义 Homebrew 路径、镜像源等配置
 
 ## App 截图
-<img width="2434" height="1786" alt="截屏2026-08-10 11 59 51 BrewDesk" src="https://github.com/user-attachments/assets/99670cdd-7a8d-4d9d-9cde-f7a026c482ad" />
+
+<img width="2502" height="2106" alt="截屏2026-08-12 15 20 26 BrewDesk" src="https://github.com/user-attachments/assets/ff41bbe9-f44b-4e08-97e0-9fe6ba16c354" />
 <img width="2434" height="1786" alt="截屏2026-08-10 12 00 27 BrewDesk" src="https://github.com/user-attachments/assets/21142fb1-f72e-44d9-bcb9-515a8b1c6db3" />
 <img width="2434" height="1786" alt="截屏2026-08-10 12 00 35 BrewDesk" src="https://github.com/user-attachments/assets/fd2c95d6-8a50-4f30-8685-93d217927efa" />
 <img width="2434" height="1786" alt="截屏2026-08-10 11 59 58 BrewDesk" src="https://github.com/user-attachments/assets/419f2115-b385-4296-8827-1579c1ef31d7" />

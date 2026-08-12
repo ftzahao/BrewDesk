@@ -13,6 +13,8 @@ struct HomeCatalogList: View {
     let onUninstall: (Package) -> Void
 
     @State private var localSelection: Package.ID?
+    /// 当前悬停行（仅记录最后悬停项，行重建时自动归零）
+    @State private var hoveredID: Package.ID?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -23,48 +25,29 @@ struct HomeCatalogList: View {
                 // 1.6 万行目录实测额外占用约 100MB（约 7KB/行，裸 List 只有其零头），
                 // 还带 macOS 26 滚动目标回映的行数断言崩溃风险。
                 // 改为行内点击 + 手动高亮，选中交互等价（详情联动、右键菜单、索引跳转不变）。
+                // 分组渲染：按首字母 A-Z 分段（非字母归 "#"），Section header 随 List 浮动，
+                // 行与 header 均为懒实例化，窗口化渲染与大目录性能不冲突。
                 List {
-                    ForEach(state.homeFilteredCatalog) { pkg in
-                        PackageRowView(
-                            package: pkg,
-                            showKindBadge: false,
-                            showIcon: pkg.isInstalled,
-                            showInstalledIndicator: true
-                        )
-                            .contentShape(Rectangle())
-                            .background {
-                                if localSelection == pkg.id {
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color.accentColor.opacity(0.14))
-                                }
+                    ForEach(state.homeCatalogSections) { section in
+                        Section {
+                            ForEach(section.packages) { pkg in
+                                row(pkg)
                             }
-                            .onTapGesture {
-                                localSelection = pkg.id
-                                state.selectedPackageID = pkg.id
-                            }
-                            .contextMenu {
-                                if pkg.isInstalled {
-                                    if pkg.isOutdated {
-                                        Button("升级") {
-                                            Task { await state.upgrade(packages: [pkg]) }
-                                        }
-                                    }
-                                    Button("卸载…", role: .destructive) { onUninstall(pkg) }
-                                } else {
-                                    Button("安装") { Task { await state.install(pkg) } }
-                                }
-                            }
+                        } header: {
+                            sectionHeader(section)
+                        }
                     }
                 }
+                .listStyle(.plain)
                 .scrollContentBackground(.hidden)
+                // 去掉行分隔线：分组章节头 + hover/选中高亮已提供视觉层次，
+                // 密集目录下无分隔线更干净，也减少每行绘制开销。
+                .listRowSeparator(.hidden)
                 // 行数据变化时整体重建列表，销毁缓存的滚动目标（见 InstalledView 注释）。
                 // id 用轻量内容版本号而非整个数组：避免每次 body 求值对 1.4 万项哈希，
                 // 也避免无内容变化的发布（如详情加载同步条目）误触发全表重建。
                 .id(state.homeCatalogListStamp)
                 .onChange(of: state.homeKindFilter) { _, _ in
-                    scrollToFirst(proxy: proxy)
-                }
-                .onChange(of: state.homeInstalledOnly) { _, _ in
                     scrollToFirst(proxy: proxy)
                 }
                 // @Observable 下替代 state.$selectedPackageID 的 onReceive：
@@ -110,25 +93,86 @@ struct HomeCatalogList: View {
         .safeAreaInset(edge: .bottom) { footer }
     }
 
+    // MARK: - 行与章节头
+
+    private func row(_ pkg: Package) -> some View {
+        PackageRowView(
+            package: pkg,
+            showKindBadge: false,
+            showIcon: pkg.isInstalled,
+            showInstalledIndicator: true
+        )
+        .contentShape(Rectangle())
+        .background {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(rowBackground(pkg))
+        }
+        .onHover { hovering in
+            // hover 即时切换不带动画：密集目录下鼠标扫过时避免每帧开动画
+            hoveredID = hovering ? pkg.id : nil
+        }
+        .onTapGesture {
+            localSelection = pkg.id
+            state.selectedPackageID = pkg.id
+        }
+        .contextMenu {
+            if pkg.isInstalled {
+                if pkg.isOutdated {
+                    Button("升级") {
+                        Task { await state.upgrade(packages: [pkg]) }
+                    }
+                }
+                Button("卸载…", role: .destructive) { onUninstall(pkg) }
+            } else {
+                Button("安装") { Task { await state.install(pkg) } }
+            }
+        }
+    }
+
+    /// 选中高亮优先于 hover，无悬停/选中时为透明（不加行底色）。
+    private func rowBackground(_ pkg: Package) -> Color {
+        if localSelection == pkg.id {
+            return Color.accentColor.opacity(0.14)
+        }
+        if hoveredID == pkg.id {
+            return Color.primary.opacity(0.06)
+        }
+        return Color.clear
+    }
+
+    /// A-Z 章节头：字母 + 组内数量，List 原生浮动（sticky），
+    /// 材质背景保证行内容滚过时可读。
+    private func sectionHeader(_ section: AppState.CatalogSection) -> some View {
+        HStack(spacing: 6) {
+            Text(section.letter.uppercased())
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+            Text("\(section.packages.count)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.tertiary)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial)
+    }
+
     // MARK: - 筛选与跳转
 
     private var filterBar: some View {
-        HStack(spacing: 10) {
-            GlassSegmentedControl(
-                options: [
-                    ("全部", Optional<PackageKind>.none),
-                    ("Formula", Optional.some(.formula)),
-                    ("Cask", Optional.some(.cask)),
-                ],
-                selection: state.asyncBinding(\.homeKindFilter),
-                idPrefix: "filter.kind"
-            )
-            .frame(maxWidth: .infinity)
-
-            Toggle("已安装", isOn: state.asyncBinding(\.homeInstalledOnly))
-                .toggleStyle(.checkbox)
-                .help("仅显示已安装的软件包")
-        }
+        // 分段控件用增强版 Liquid Glass（选中胶囊 spring 滑动 + 水滴质感），
+        // 原生 Picker 无法注入切换动画，故由自定义控件实现。
+        GlassSegmentedControl(
+            options: [
+                ("全部", Optional<PackageKind>.none),
+                ("Formula", Optional.some(.formula)),
+                ("Cask", Optional.some(.cask)),
+            ],
+            selection: state.asyncBinding(\.homeKindFilter),
+            idPrefix: "filter.kind"
+        )
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -144,10 +188,9 @@ struct HomeCatalogList: View {
     }
 
     private func jumpToLetter(_ letter: String, proxy: ScrollViewProxy) {
-        guard let idx = state.homeFilteredCatalog.firstIndex(where: {
-            $0.name.lowercased().hasPrefix(letter)
-        }) else { return }
-        let targetID = state.homeFilteredCatalog[idx].id
+        // 定位到该分组第一个包，让 sticky 章节头正好浮在列表顶部
+        guard let section = state.homeCatalogSections.first(where: { $0.letter == letter }),
+              let targetID = section.packages.first?.id else { return }
         DispatchQueue.main.async {
             withAnimation(.easeOut(duration: 0.2)) {
                 proxy.scrollTo(targetID, anchor: .top)
@@ -173,11 +216,10 @@ struct HomeCatalogList: View {
             ContentUnavailableView {
                 Label("没有匹配的软件包", systemImage: "line.3.horizontal.decrease.circle")
             } description: {
-                Text("试试切换分类，或关闭「仅看已安装」")
+                Text("试试切换分类")
             } actions: {
                 Button("清除筛选") {
                     state.homeKindFilter = nil
-                    state.homeInstalledOnly = false
                 }
             }
         }

@@ -13,6 +13,10 @@ struct BrewDeskApp: App {
     @State private var appState = AppState()
     @StateObject private var updaterController = UpdaterController()
     @State private var showAbout = false
+    /// 用户偏好：隐藏菜单栏图标（默认隐藏，仅当用户在设置中关闭后显示）。
+    /// 用 @AppStorage 而非 AppState：MenuBarExtra 插入状态由 App 场景驱动，
+    /// 设置页 toggle 与本处绑定同一 key，任意一端变化都会同步重建 App body。
+    @AppStorage("hideMenuBarIcon") private var hideMenuBarIcon = true
 
     var body: some Scene {
         WindowGroup {
@@ -64,7 +68,12 @@ struct BrewDeskApp: App {
             }
         }
 
-        MenuBarExtra {
+        // isInserted 语义为「显示图标」，与偏好「隐藏」取反；
+        // 隐藏后主窗口（Dock 图标/⌘Tab）仍是完整入口，可从设置恢复。
+        MenuBarExtra(isInserted: Binding(
+            get: { !hideMenuBarIcon },
+            set: { hideMenuBarIcon = !$0 }
+        )) {
             MenuBarMenuContent(state: appState)
         } label: {
             MenuBarLabelView(state: appState)

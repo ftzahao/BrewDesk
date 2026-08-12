@@ -189,12 +189,11 @@ final class AppState {
     var homeKindFilter: PackageKind? = nil {
         didSet { scheduleCatalogDerivedRebuild() }
     }
-    var homeInstalledOnly: Bool = false {
-        didSet { scheduleCatalogDerivedRebuild() }
-    }
 
     /// 主页目录派生数据缓存：避免视图每帧对整个目录做全量过滤/统计
     private(set) var homeFilteredCatalog: [Package] = []
+    /// 目录 A-Z 分组缓存（非字母开头归 "#"），与 homeFilteredCatalog 同源同步更新
+    private(set) var homeCatalogSections: [CatalogSection] = []
     private(set) var homeCatalogIndex: [Package.ID: Int] = [:]
     private(set) var homeIndexLetters: [String] = []
     private(set) var catalogInstalledCount = 0
@@ -1142,11 +1141,10 @@ final class AppState {
         let generation = derivedGeneration
         let snapshot = catalog // COW：仅 retain，零拷贝
         let kindFilter = homeKindFilter
-        let installedOnly = homeInstalledOnly
 
         Task.detached {
             let result = AppState.computeCatalogDerivedData(
-                catalog: snapshot, kindFilter: kindFilter, installedOnly: installedOnly
+                catalog: snapshot, kindFilter: kindFilter
             )
             await MainActor.run {
                 guard self.derivedGeneration == generation else { return }
@@ -1154,6 +1152,7 @@ final class AppState {
                 // 统计基于完整目录（可能与过滤结果不同步变化），独立按值写回。
                 if result.filtered != self.homeFilteredCatalog {
                     self.homeFilteredCatalog = result.filtered
+                    self.homeCatalogSections = result.sections
                     self.homeCatalogIndex = result.index
                     self.homeIndexLetters = result.letters
                     self.homeCatalogListStamp += 1
@@ -1173,7 +1172,7 @@ final class AppState {
 
     /// 纯函数：目录派生数据计算（nonisolated，可在任意执行器运行）。
     nonisolated static func computeCatalogDerivedData(
-        catalog: [Package], kindFilter: PackageKind?, installedOnly: Bool
+        catalog: [Package], kindFilter: PackageKind?
     ) -> CatalogDerivedData {
         // 统计（基于完整目录，与历史语义一致）
         var installedCount = 0
@@ -1184,10 +1183,9 @@ final class AppState {
         }
 
         // 过滤 + 字母索引 + O(1) 选中查找
-        let base = kindFilter.map { kind in
+        let filtered = kindFilter.map { kind in
             catalog.filter { $0.kind == kind }
         } ?? catalog
-        let filtered = installedOnly ? base.filter(\.isInstalled) : base
 
         var index: [Package.ID: Int] = [:]
         index.reserveCapacity(filtered.count)
@@ -1201,8 +1199,22 @@ final class AppState {
             letters.insert(String(first).lowercased())
         }
 
+        // A-Z 分组：与字母索引共用同一分组规则（非字母开头归 "#" 放最后）。
+        // 单趟遍历完成分桶，避免为每个字母重复扫描数组。
+        var buckets: [String: [Package]] = [:]
+        for pkg in filtered {
+            let key = CatalogSection.letter(for: pkg.name)
+            buckets[key, default: []].append(pkg)
+        }
+        let sections = buckets.keys.sorted { a, b in
+            if a == CatalogSection.nonLetterKey { return false }
+            if b == CatalogSection.nonLetterKey { return true }
+            return a < b
+        }.map { CatalogSection(letter: $0, packages: buckets[$0] ?? []) }
+
         return CatalogDerivedData(
             filtered: filtered,
+            sections: sections,
             index: index,
             letters: letters.sorted(),
             installedCount: installedCount,
@@ -1214,11 +1226,27 @@ final class AppState {
     /// 目录派生数据的计算结果，跨线程传递。
     nonisolated struct CatalogDerivedData: Sendable {
         let filtered: [Package]
+        let sections: [CatalogSection]
         let index: [String: Int]
         let letters: [String]
         let installedCount: Int
         let formulaCount: Int
         let caskCount: Int
+    }
+
+    /// 目录 A-Z 分组：letter 存小写字母（或 "#"），视图展示时转大写。
+    /// 与 homeIndexLetters 使用同一首字母规则，保证索引跳转与分组完全一致。
+    nonisolated struct CatalogSection: Identifiable, Sendable, Equatable {
+        static let nonLetterKey = "#"
+        let letter: String
+        var packages: [Package]
+        var id: String { letter }
+
+        /// 与 computeCatalogDerivedData 中 letters 收集逻辑同源的分组键。
+        static func letter(for name: String) -> String {
+            guard let first = name.first, first.isLetter else { return nonLetterKey }
+            return String(first).lowercased()
+        }
     }
 
     /// 写入完整详情缓存并做 LRU 淘汰，防止内存无界增长。
@@ -1250,6 +1278,12 @@ final class AppState {
            homeIdx < homeFilteredCatalog.count,
            homeFilteredCatalog[homeIdx] != package {
             homeFilteredCatalog[homeIdx] = package
+            // 同步分组缓存中的同一条目（分组内查找，组平均 ~500 项，仅详情同步时触发）
+            for si in homeCatalogSections.indices {
+                guard let pi = homeCatalogSections[si].packages.firstIndex(where: { $0.id == package.id }) else { continue }
+                homeCatalogSections[si].packages[pi] = package
+                break
+            }
             homeCatalogListStamp += 1
         }
     }

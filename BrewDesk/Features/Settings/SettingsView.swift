@@ -10,6 +10,8 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var state: AppState
     @State private var showAbout = false
+    /// 与 BrewDeskApp 中 MenuBarExtra 插入状态共用同一偏好 key（默认隐藏）
+    @AppStorage("hideMenuBarIcon") private var hideMenuBarIcon = true
 
     private var appVersion: String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"]  as? String ?? "?"
@@ -58,6 +60,15 @@ struct SettingsView: View {
                     Label("列表", systemImage: "list.bullet")
                 } footer: {
                     Text("作为依赖安装的 formula 默认隐藏，可在已安装页随时切换。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
+                Section {
+                    Toggle("隐藏菜单栏图标", isOn: $hideMenuBarIcon)
+                } header: {
+                    Label("菜单栏", systemImage: "menubar.rectangle")
+                } footer: {
+                    Text("隐藏后菜单栏不再显示 BrewDesk 图标，可随时在本页重新开启；从 Dock 或 ⌘Tab 仍可打开主窗口。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
 

@@ -233,28 +233,31 @@ struct GlassSearchField: View {
 
 // MARK: - 玻璃分段控件
 
-/// Liquid Glass 分段选择器：选中段为玻璃胶囊，切换时胶囊在段之间 morph。
-/// 使用同一 glassEffectID + GlassEffectContainer，与原生 macOS 26 分段控件观感一致。
+/// Liquid Glass 分段选择器（水滴版）：选中胶囊以 spring 弹性在段间滑动，
+/// 顶部高光描边 + 底部阴影模拟水珠凸起质感，切换时如液滴滚动。
+/// 原生 Picker(.segmented) 无法注入切换动画，故由自定义控件实现。
 struct GlassSegmentedControl<Value: Hashable & Sendable>: View {
     let options: [(title: String, value: Value)]
     @Binding var selection: Value
-    /// glassEffectID 前缀，避免同屏多个控件相互 morph
+    /// matchedGeometryEffect 前缀，避免同屏多个控件相互 morph
     var idPrefix: String = "segment"
 
     @Namespace private var namespace
     @State private var hovered: Value?
 
     var body: some View {
-        GlassEffectContainer(spacing: 4) {
-            HStack(spacing: 3) {
-                ForEach(options, id: \.title) { option in
-                    segmentButton(option)
-                }
+        HStack(spacing: 3) {
+            ForEach(options, id: \.title) { option in
+                segmentButton(option)
             }
-            .padding(3)
-            .glassEffect(.clear, in: Capsule())
         }
-        .animation(.easeInOut(duration: 0.22), value: selection)
+        .padding(3)
+        .background {
+            Capsule()
+                .fill(Color.primary.opacity(0.05))
+        }
+        // 水滴弹性：切换时选中胶囊以 spring 滑动到目标段，带轻微回弹
+        .animation(.spring(duration: 0.4, bounce: 0.35), value: selection)
     }
 
     private func segmentButton(_ option: (title: String, value: Value)) -> some View {
@@ -272,13 +275,8 @@ struct GlassSegmentedControl<Value: Hashable & Sendable>: View {
                 .contentShape(Capsule())
                 .background {
                     if isSelected {
-                        Capsule()
-                            .fill(.regularMaterial)
-                            .overlay {
-                                Capsule().fill(Color.accentColor.opacity(0.10))
-                            }
-                            .glassEffect(.regular.interactive(), in: Capsule())
-                            .glassEffectID("\(idPrefix).selected", in: namespace)
+                        selectedPill
+                            .matchedGeometryEffect(id: "\(idPrefix).pill", in: namespace)
                     }
                 }
                 .scaleEffect(hovered == option.value && !isSelected ? 1.03 : 1)
@@ -292,5 +290,25 @@ struct GlassSegmentedControl<Value: Hashable & Sendable>: View {
         }
         .accessibilityLabel(option.title)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
+    /// 水滴选中胶囊：材质 + 顶部高光描边 + 底部阴影，模拟水珠凸起质感
+    private var selectedPill: some View {
+        Capsule()
+            .fill(.regularMaterial)
+            .overlay {
+                Capsule().fill(Color.accentColor.opacity(0.10))
+            }
+            .overlay {
+                Capsule()
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [.white.opacity(0.45), .white.opacity(0.06)],
+                            startPoint: .top, endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+            }
+            .shadow(color: .black.opacity(0.14), radius: 4, y: 1.5)
     }
 }

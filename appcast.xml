@@ -9,16 +9,16 @@
         <link>https://github.com/ftzahao/BrewDesk</link>
 
         <item>
-            <title>BrewDesk 1.0.8</title>
-            <pubDate>一, 10  8月 2026 11:28:03 +0800</pubDate>
+            <title>BrewDesk 1.0.9</title>
+            <pubDate>三, 12  8月 2026 15:16:29 +0800</pubDate>
             <sparkle:channel>release</sparkle:channel>
-            <sparkle:version>1.0.8</sparkle:version>
-            <sparkle:shortVersionString>1.0.8</sparkle:shortVersionString>
+            <sparkle:version>1.0.9</sparkle:version>
+            <sparkle:shortVersionString>1.0.9</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.5</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/ftzahao/BrewDesk/releases/download/1.0.8/BrewDesk.dmg" length="2772613" type="application/octet-stream" sparkle:edSignature="viCyAFSTTp6L/m6EqwI1Z6yYXjas1FXNRa9R9xaYqtsnxmbkSwe+DM0PHq8NLF8NWVygpFLXIs8vmxWL/QS1Dg==" />
+            <enclosure url="https://github.com/ftzahao/BrewDesk/releases/download/1.0.9/BrewDesk.dmg" length="2789302" type="application/octet-stream" sparkle:edSignature="AoeGo5KcoTa9AnlGkdwTNGg6k8epZ4zDBvwM+0masrPngafLuneP8fj1lKyKVPk/sFEtYyDd6IHAwOnagpDHAw==" />
             <description sparkle:format="markdown"><![CDATA[
-## 1.0.8
+## 1.0.9
 
 正在开发中，功能可能不稳定
 
